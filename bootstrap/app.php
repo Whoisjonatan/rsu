@@ -12,9 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Autenticación por cookie para el SPA de React (Sanctum).
-        // La app móvil (React Native) usa tokens Bearer y no pasa por aquí.
-        $middleware->statefulApi();
+        // Autenticación por tokens Bearer de Sanctum: el mismo mecanismo para el
+        // SPA web y para la app móvil (React Native). Sin sesión por cookie, así
+        // que el front puede apuntar a localhost:8000 o a rsu-back.test.
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

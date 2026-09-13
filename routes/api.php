@@ -1,6 +1,21 @@
 <?php
 
-use Illuminate\Http\Request;
+use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BrandController;
+use App\Http\Controllers\Api\BrandModelController;
+use App\Http\Controllers\Api\ContractController;
+use App\Http\Controllers\Api\DniLookupController;
+use App\Http\Controllers\Api\GeographyController;
+use App\Http\Controllers\Api\PersonController;
+use App\Http\Controllers\Api\ScheduleController;
+use App\Http\Controllers\Api\UserTypeController;
+use App\Http\Controllers\Api\VacationController;
+use App\Http\Controllers\Api\VehicleColorController;
+use App\Http\Controllers\Api\VehicleController;
+use App\Http\Controllers\Api\VehicleImageController;
+use App\Http\Controllers\Api\VehicleTypeController;
+use App\Http\Controllers\Api\ZoneController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
@@ -19,6 +34,64 @@ Route::get('/ping', function () {
     ];
 });
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+Route::post('/login', [AuthController::class, 'login']);
+
+// Terminal de marcacion (W11): publico, el trabajador se identifica con DNI y clave.
+Route::post('/attendances/mark', [AttendanceController::class, 'mark']);
+Route::get('/attendances/windows', [AttendanceController::class, 'windows']);
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/me', [AuthController::class, 'me']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+
+    // Maestros de vehiculos (W03)
+    Route::apiResource('brands', BrandController::class)->except('show');
+    Route::apiResource('brandmodels', BrandModelController::class)->except('show');
+    Route::apiResource('vehicletypes', VehicleTypeController::class)->except('show');
+    Route::apiResource('vehiclecolors', VehicleColorController::class)->except('show');
+
+    // Vehiculos (W04, W05)
+    Route::get('vehicles/summary', [VehicleController::class, 'summary']);
+    Route::apiResource('vehicles', VehicleController::class);
+    Route::post('vehicles/{vehicle}/images', [VehicleImageController::class, 'store']);
+    Route::put('vehicles/{vehicle}/images/{image}/profile', [VehicleImageController::class, 'setProfile']);
+    Route::delete('vehicles/{vehicle}/images/{image}', [VehicleImageController::class, 'destroy']);
+
+    // Funciones del personal (W06)
+    Route::apiResource('usertypes', UserTypeController::class)->except('show');
+
+    // Personal (W07, W08)
+    Route::get('people/summary', [PersonController::class, 'summary']);
+    Route::apiResource('people', PersonController::class)->parameters(['people' => 'person']);
+    Route::post('people/{person}/photo', [PersonController::class, 'uploadPhoto']);
+    Route::delete('people/{person}/photo', [PersonController::class, 'deletePhoto']);
+
+    // Consulta de DNI para prellenar la ficha (opcional). Se limita el ritmo
+    // para no agotar la cuota del proveedor por un dedo pegado al teclado.
+    Route::get('dni-lookup', [DniLookupController::class, 'status']);
+    Route::get('dni-lookup/{dni}', [DniLookupController::class, 'show'])
+        ->middleware('throttle:20,1');
+
+    // Contratos (W09) y vacaciones (W10)
+    Route::apiResource('people.contracts', ContractController::class)
+        ->parameters(['people' => 'person'])
+        ->except('show');
+    Route::apiResource('people.vacations', VacationController::class)
+        ->parameters(['people' => 'person'])
+        ->except('show');
+
+    // Zonas (W13) y sus catalogos geograficos
+    Route::apiResource('zones', ZoneController::class);
+    Route::get('districts', [GeographyController::class, 'districts']);
+    Route::get('sectors', [GeographyController::class, 'sectors']);
+    Route::post('sectors', [GeographyController::class, 'storeSector']);
+    Route::put('sectors/{sector}', [GeographyController::class, 'updateSector']);
+    Route::delete('sectors/{sector}', [GeographyController::class, 'destroySector']);
+
+    // Reporte de asistencias (W12)
+    Route::get('attendances/by-person', [AttendanceController::class, 'byPerson']);
+    Route::get('attendances/by-date', [AttendanceController::class, 'byDate']);
+
+    // Turnos (W16)
+    Route::apiResource('schedules', ScheduleController::class)->except('show');
+});
