@@ -1,0 +1,352 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\SchedulingRequest;
+use App\Http\Resources\SchedulingResource;
+use App\Models\Scheduling;
+use App\Models\User;
+use App\Models\VehicleRoute;
+use App\Models\Zone;
+use App\Services\Scheduling\SchedulingRules;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+
+/**
+ * Programacion maestra (W17, W18).
+ *
+ * Guardar una programacion hace dos cosas: escribe la regla en "schedulings" y
+ * genera los recorridos de cada dia en "vehicleroutes", que es lo que leen el
+ * calendario (W20) y el inicio de recorrido (W21).
+ */
+class SchedulingController extends Controller
+{
+    private const RELATIONS = ['zone', 'route', 'vehicle', 'schedule', 'driver', 'helper'];
+
+    public function index(Request $request): AnonymousResourceCollection
+    {
+        $schedulings = Scheduling::query()
+            ->with(self::RELATIONS)
+            ->withCount('vehicleRoutes')
+            ->when($request->filled('zone_id'), fn ($q) => $q->where('zone_id', $request->integer('zone_id')))
+            ->when($request->filled('schedule_id'), fn ($q) => $q->where('schedule_id', $request->integer('schedule_id')))
+            ->when($request->filled('vehicle_id'), fn ($q) => $q->where('vehicle_id', $request->integer('vehicle_id')))
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')->toString()))
+            // "Vigentes hoy": las que cubren la fecha actual. Es el filtro que
+            // W17 trae marcado al entrar.
+            ->when($request->boolean('current'), fn ($q) => $q
+                ->where('start_date', '<=', now()->toDateString())
+                ->where('end_date', '>=', now()->toDateString()))
+            // W17 filtra por fecha ("24/08/2026"): solo las vigentes ese día.
+            ->when($request->filled('date'), fn ($q) => $q
+                ->whereDate('start_date', '<=', $request->date('date'))
+                ->whereDate('end_date', '>=', $request->date('date')))
+            ->when($request->boolean('current'), fn ($q) => $q
+                ->where('start_date', '<=', now()->toDateString())
+                ->where('end_date', '>=', now()->toDateString()))
+            ->orderByDesc('start_date')
+            ->orderBy('id')
+            ->paginate($request->integer('per_page', 15))
+            ->withQueryString();
+
+        // La columna ESTADO de W17 no es el estado de la programación
+        // (activa/inactiva) sino el del recorrido del día consultado, que vive
+        // en otra tabla. Se resuelve en una consulta para toda la página.
+        if ($request->filled('date')) {
+            $this->attachDayStatus($schedulings->getCollection(), $request->date('date')->format('Y-m-d'));
+        }
+
+        return SchedulingResource::collection($schedulings);
+    }
+
+    /**
+     * Cuelga de cada programacion el estado de su recorrido en esa fecha y el
+     * aviso de vacaciones sobrevenidas, que es lo que W17 pinta bajo la tabla.
+     *
+     * @param  \Illuminate\Support\Collection<int, Scheduling>  $schedulings
+     */
+    private function attachDayStatus($schedulings, string $date): void
+    {
+        $routes = \App\Models\VehicleRoute::query()
+            ->whereIn('scheduling_id', $schedulings->pluck('id'))
+            ->whereDate('date_route', $date)
+            ->get()
+            ->keyBy('scheduling_id');
+
+        $weekday = (int) date('N', strtotime($date));
+
+        foreach ($schedulings as $scheduling) {
+            $route = $routes->get($scheduling->id);
+
+            $scheduling->day_route_id = $route?->id;
+            // Sin recorrido ese día puede ser que ese día no toque (no está en
+            // weekdays) o que sea pasado: no es lo mismo y la fila lo dice.
+            $scheduling->day_status = $route?->status
+                ?? (in_array($weekday, array_map('intval', $scheduling->weekdays ?? []), true)
+                    ? 'sin_recorrido'
+                    : 'no_aplica');
+            $scheduling->day_block_reason = $route?->block_reason;
+            $scheduling->vacation_conflicts = $scheduling->vacationConflicts($date);
+        }
+    }
+
+    public function store(SchedulingRequest $request): JsonResponse
+    {
+        $scheduling = DB::transaction(function () use ($request) {
+            $scheduling = Scheduling::create($request->validated());
+            $scheduling->syncVehicleRoutes();
+
+            return $scheduling;
+        });
+
+        return (new SchedulingResource($scheduling->load(self::RELATIONS)->loadCount('vehicleRoutes')))
+            ->response()
+            ->setStatusCode(201);
+    }
+
+    public function show(Scheduling $scheduling): SchedulingResource
+    {
+        return new SchedulingResource(
+            $scheduling->load(self::RELATIONS)->loadCount('vehicleRoutes'),
+        );
+    }
+
+    public function update(SchedulingRequest $request, Scheduling $scheduling): SchedulingResource
+    {
+        DB::transaction(function () use ($request, $scheduling) {
+            $scheduling->update($request->validated());
+            $scheduling->syncVehicleRoutes();
+        });
+
+        return new SchedulingResource($scheduling->load(self::RELATIONS)->loadCount('vehicleRoutes'));
+    }
+
+    public function destroy(Scheduling $scheduling): JsonResponse
+    {
+        // Si algun recorrido ya arranco, la programacion es historia: se
+        // desactiva, no se borra. Asi W20 sigue explicando lo que pasó.
+        $started = $scheduling->vehicleRoutes()->where('status', '!=', 'programado')->count();
+
+        if ($started > 0) {
+            return response()->json([
+                'message' => sprintf(
+                    'No se puede eliminar: la programación ya tiene %s %s. Cámbiala a inactiva.',
+                    $this->plural($started, 'recorrido', 'recorridos'),
+                    $started === 1 ? 'iniciado' : 'iniciados',
+                ),
+            ], 409);
+        }
+
+        $scheduling->delete();
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * Valida sin guardar: es la checklist viva del panel derecho de W18, que
+     * se actualiza mientras el usuario elige y no al pulsar "Programar".
+     *
+     * Reutiliza el mismo SchedulingRequest, asi que no hay dos juegos de
+     * reglas que puedan separarse con el tiempo.
+     */
+    public function validateDraft(Request $request): JsonResponse
+    {
+        // A proposito NO se usa SchedulingRequest: un FormRequest aborta con
+        // 422 al primer fallo y W18 necesita las cuatro filas a la vez, tres
+        // en verde y una en ambar. Aqui siempre se responde 200 con el estado
+        // de cada una.
+        $data = $request->all();
+        $validator = SchedulingRules::validator($data, $request->integer('id') ?: null);
+        $validator->fails();
+
+        $errors = $validator->errors();
+        $all = implode(' | ', $errors->all());
+
+        // Cada fila de la checklist se enciende por el texto del error que la
+        // provoca: las reglas de negocio devuelven varios mensajes sobre el
+        // mismo campo (driver_id puede fallar por contrato Y por vacaciones).
+        $checks = [
+            'contrato' => [
+                'label' => 'Personal con contrato vigente',
+                'ok' => ! str_contains($all, 'contrato vigente'),
+            ],
+            'vehiculo' => [
+                'label' => 'Vehículo disponible',
+                'ok' => ! $errors->has('vehicle_id'),
+            ],
+            'duplicidad' => [
+                'label' => 'Sin duplicidad de turno',
+                'ok' => ! str_contains($all, 'ya está programado'),
+            ],
+            'vacaciones' => [
+                'label' => 'Personal sin vacaciones',
+                'ok' => ! str_contains($all, 'de vacaciones'),
+            ],
+        ];
+
+        return response()->json([
+            'valid' => $errors->isEmpty(),
+            'checks' => $checks,
+            'errors' => $errors->toArray(),
+            // "Generará N recorridos": ayuda a entender el rango antes de guardar.
+            'occurrences' => count(SchedulingRules::occurrenceDates($data)),
+        ]);
+    }
+
+    /**
+     * Edicion masiva (W19): aplica los mismos cambios a varias programaciones.
+     *
+     * La pantalla lo dice con todas las letras: "el sistema rechazará las filas
+     * que incumplan una validación y aplicará el resto". Por eso cada fila se
+     * valida y se guarda por separado, y se devuelve el detalle de las que no
+     * pasaron en vez de abortar el lote entero.
+     *
+     * Con `dry_run` no escribe nada: solo dice qué pasaria. Es lo que alimenta
+     * el aviso previo de W19 ("2 programaciones quedarán duplicadas en turno y
+     * vehículo"), que tiene que salir ANTES de pulsar "Aplicar cambios".
+     */
+    public function bulkUpdate(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:schedulings,id'],
+            'dry_run' => ['sometimes', 'boolean'],
+            // Solo los campos que W19 ofrece cambiar.
+            'changes' => ['required', 'array', 'min:1'],
+            'changes.schedule_id' => ['sometimes', 'exists:schedules,id'],
+            'changes.vehicle_id' => ['sometimes', Rule::exists('vehicles', 'id')->where('status', 'operativo')],
+            'changes.driver_id' => ['sometimes', 'exists:users,id'],
+            'changes.helper_id' => ['sometimes', 'nullable', 'exists:users,id'],
+            'changes.end_date' => ['sometimes', 'date'],
+            'changes.status' => ['sometimes', Rule::in(['activa', 'inactiva'])],
+        ], [], ['changes.vehicle_id' => 'vehículo']);
+
+        $simulacion = $request->boolean('dry_run');
+        $aplicadas = [];
+        $rechazadas = [];
+
+        foreach (Scheduling::findMany($data['ids']) as $scheduling) {
+            $payload = array_merge($scheduling->only([
+                'zone_id', 'route_id', 'vehicle_id', 'schedule_id',
+                'driver_id', 'helper_id', 'status',
+            ]), [
+                'weekdays' => array_map('intval', $scheduling->weekdays ?? []),
+                'start_date' => $scheduling->start_date->toDateString(),
+                'end_date' => $scheduling->end_date->toDateString(),
+            ], $data['changes']);
+
+            // Se ignora a sí misma para que no choque con su propio horario.
+            $validator = SchedulingRules::validator($payload, $scheduling->id);
+
+            if ($validator->fails()) {
+                $rechazadas[] = [
+                    'id' => $scheduling->id,
+                    'code' => $scheduling->code,
+                    'errors' => $validator->errors()->all(),
+                ];
+
+                continue;
+            }
+
+            if (! $simulacion) {
+                DB::transaction(function () use ($scheduling, $payload) {
+                    $scheduling->update($payload);
+                    $scheduling->syncVehicleRoutes();
+                });
+            }
+
+            $aplicadas[] = ['id' => $scheduling->id, 'code' => $scheduling->code];
+        }
+
+        $hechas = count($aplicadas);
+        $fallidas = count($rechazadas);
+
+        if ($simulacion) {
+            return response()->json([
+                'dry_run' => true,
+                'message' => sprintf(
+                    '%s se %s y %s se %s.',
+                    $this->plural($hechas, 'programación', 'programaciones'),
+                    $hechas === 1 ? 'actualizaría' : 'actualizarían',
+                    $this->plural($fallidas, 'programación', 'programaciones'),
+                    $fallidas === 1 ? 'rechazaría' : 'rechazarían',
+                ),
+                'aplicadas' => $aplicadas,
+                'rechazadas' => $rechazadas,
+            ]);
+        }
+
+        return response()->json([
+            'message' => sprintf(
+                '%s %s y %s %s.',
+                $this->plural($hechas, 'programación', 'programaciones'),
+                $hechas === 1 ? 'actualizada' : 'actualizadas',
+                $this->plural($fallidas, 'programación', 'programaciones'),
+                $fallidas === 1 ? 'rechazada' : 'rechazadas',
+            ),
+            'aplicadas' => $aplicadas,
+            'rechazadas' => $rechazadas,
+        ], $rechazadas === [] ? 200 : 207);
+    }
+
+    /** "1 programación" / "3 programaciones"; los "(es)" quedan feos en pantalla. */
+    private function plural(int $count, string $singular, string $plural): string
+    {
+        return $count.' '.($count === 1 ? $singular : $plural);
+    }
+
+    /** Contadores de la barra superior de W17. */
+    public function summary(): JsonResponse
+    {
+        $today = now()->toDateString();
+
+        return response()->json([
+            'total' => Scheduling::count(),
+            'activas' => Scheduling::where('status', 'activa')->count(),
+            'vigentes' => Scheduling::where('status', 'activa')
+                ->where('start_date', '<=', $today)
+                ->where('end_date', '>=', $today)
+                ->count(),
+            'inactivas' => Scheduling::where('status', 'inactiva')->count(),
+        ]);
+    }
+
+    /**
+     * Tercera validacion del informe: "debe precargar datos en base a la zona".
+     *
+     * El personal sale de su zona asignada (users.zone_id). El vehiculo y el
+     * turno no tienen zona propia en el esquema, asi que se toman de la ultima
+     * programacion de esa zona: lo habitual es lo ultimo que se uso.
+     */
+    public function defaultsForZone(Zone $zone): JsonResponse
+    {
+        $last = Scheduling::where('zone_id', $zone->id)
+            ->orderByDesc('start_date')
+            ->orderByDesc('id')
+            ->first();
+
+        $staff = User::where('zone_id', $zone->id)
+            ->where('status', 'activo')
+            ->with('usertype')
+            ->get();
+
+        $bySlug = fn (string $slug) => $staff
+            ->first(fn (User $person) => $person->usertype?->slug === $slug)?->id;
+
+        return response()->json([
+            'vehicle_id' => $last?->vehicle_id,
+            'schedule_id' => $last?->schedule_id,
+            'route_id' => $last?->route_id,
+            // La zona manda sobre la última programación para el personal:
+            // es el dato explícito de la ficha, no una inferencia.
+            'driver_id' => $bySlug('conductor') ?? $last?->driver_id,
+            'helper_id' => $bySlug('ayudante') ?? $last?->helper_id,
+            'weekdays' => $last ? array_map('intval', $last->weekdays ?? []) : [],
+            'source' => $last ? 'ultima-programacion' : 'zona',
+        ]);
+    }
+}

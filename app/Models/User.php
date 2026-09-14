@@ -118,6 +118,45 @@ class User extends Authenticatable
         return $this->vacations()->covering($date)->exists();
     }
 
+    /**
+     * De una lista de fechas, las que quedan fuera de todo contrato.
+     *
+     * La programacion valida el rango completo de golpe, asi que carga los
+     * contratos una vez y compara en memoria en vez de consultar por fecha.
+     *
+     * @param  list<string>  $dates
+     * @return list<string>
+     */
+    public function datesWithoutContract(array $dates): array
+    {
+        $contracts = $this->relationLoaded('contracts')
+            ? $this->contracts
+            : $this->contracts()->get();
+
+        return array_values(array_filter(
+            $dates,
+            fn (string $date) => ! $contracts->contains(fn (Contract $c) => $c->coversDate($date)),
+        ));
+    }
+
+    /**
+     * De una lista de fechas, las que caen en vacaciones.
+     *
+     * @param  list<string>  $dates
+     * @return list<string>
+     */
+    public function datesOnVacation(array $dates): array
+    {
+        $vacations = $this->relationLoaded('vacations')
+            ? $this->vacations
+            : $this->vacations()->get();
+
+        return array_values(array_filter(
+            $dates,
+            fn (string $date) => $vacations->contains(fn (Vacation $v) => $v->coversDate($date)),
+        ));
+    }
+
     /** Sin marcacion del dia no se puede iniciar el recorrido. */
     public function attendedOn(string $date): bool
     {

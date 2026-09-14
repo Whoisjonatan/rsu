@@ -43,6 +43,20 @@ class Contract extends Model
             });
     }
 
+    /**
+     * Espejo en memoria de scopeActiveOn(). Existe porque la programacion
+     * comprueba decenas de fechas de golpe y no puede lanzar una consulta por
+     * cada una. Si cambia una regla aqui, cambia tambien en el scope.
+     */
+    public function coversDate(string $date): bool
+    {
+        if ($this->start_date->toDateString() > $date) {
+            return false;
+        }
+
+        return $this->end_date === null || $this->end_date->toDateString() >= $date;
+    }
+
     protected function isActive(): Attribute
     {
         return Attribute::get(function () {

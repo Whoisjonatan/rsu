@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Zone;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
@@ -54,6 +55,47 @@ class ZoneController extends Controller
         $zone->delete();
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * Perimetro de la zona (W14): la lista completa de vertices.
+     *
+     * Se guarda entera de una vez en vez de vertice a vertice porque dibujar
+     * un poligono es anadir, mover y borrar puntos hasta que cierra; ir
+     * sincronizando cada clic dejaria perimetros a medias si algo falla.
+     */
+    public function saveCoords(Request $request, Zone $zone): JsonResponse
+    {
+        $data = $request->validate([
+            'coords' => ['present', 'array', 'max:500'],
+            'coords.*.latitude' => ['required', 'numeric', 'between:-90,90'],
+            'coords.*.longitude' => ['required', 'numeric', 'between:-180,180'],
+        ]);
+
+        // Vacio significa "borrar el perimetro"; con uno o dos puntos no se
+        // encierra nada, asi que eso si es un error.
+        if ($data['coords'] !== [] && count($data['coords']) < 3) {
+            return response()->json([
+                'message' => 'Un perímetro necesita al menos 3 puntos.',
+                'errors' => ['coords' => ['Un perímetro necesita al menos 3 puntos.']],
+            ], 422);
+        }
+
+        DB::transaction(function () use ($zone, $data) {
+            $zone->coords()->delete();
+
+            foreach (array_values($data['coords']) as $position => $point) {
+                $zone->coords()->create([
+                    'latitude' => $point['latitude'],
+                    'longitude' => $point['longitude'],
+                    // El orden importa: un poligono es una secuencia, no un
+                    // conjunto; al reves dibujaria otra figura.
+                    'position' => $position,
+                ]);
+            }
+        });
+
+        return response()->json($zone->load('coords'));
     }
 
     /**

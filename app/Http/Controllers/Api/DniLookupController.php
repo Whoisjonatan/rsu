@@ -17,6 +17,9 @@ use Illuminate\Support\Facades\Cache;
  */
 class DniLookupController extends Controller
 {
+    /** Marca que se guarda cuando el proveedor respondio "no existe". */
+    private const SIN_RESULTADO = 'sin-resultado';
+
     public function __construct(private readonly DniLookup $lookup) {}
 
     /** El front pregunta esto una vez para decidir si muestra el boton. */
@@ -56,16 +59,33 @@ class DniLookupController extends Controller
             ], 409);
         }
 
+        // El nombre de una persona no cambia: cachear ahorra cuota. La clave
+        // lleva el driver para que, si algun dia se cambia de proveedor, no se
+        // sirvan respuestas del anterior.
+        $key = 'dni:'.config('dni.driver').":{$dni}";
+        $cached = Cache::get($key);
+
         try {
-            // El nombre de una persona no cambia: cachear ahorra cuota.
-            $person = Cache::remember(
-                "dni:{$dni}",
-                now()->addDays((int) config('dni.cache_days')),
-                fn () => $this->lookup->find($dni)?->toArray(),
-            );
+            if ($cached === null) {
+                // Un DNI fuera del padron tambien gasta consulta, asi que el
+                // "no encontrado" se cachea como marca: Cache::remember no lo
+                // haria, porque para el un null es "no hay nada guardado".
+                $found = $this->lookup->find($dni)?->toArray();
+
+                Cache::put(
+                    $key,
+                    $cached = $found ?? self::SIN_RESULTADO,
+                    // Menos dias para el negativo: puede venir de un padron
+                    // desactualizado del proveedor, no de un DNI inexistente.
+                    $found ? now()->addDays((int) config('dni.cache_days')) : now()->addDay(),
+                );
+            }
         } catch (DniLookupFailed $e) {
+            // Un fallo del proveedor nunca se cachea: se reintenta a la proxima.
             return response()->json(['message' => $e->getMessage()], 502);
         }
+
+        $person = is_array($cached) ? $cached : null;
 
         if (! $person) {
             return response()->json([

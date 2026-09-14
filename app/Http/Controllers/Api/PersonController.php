@@ -31,6 +31,11 @@ class PersonController extends Controller
             })
             ->when($request->filled('usertype_id'), fn (Builder $q) => $q
                 ->where('usertype_id', $request->integer('usertype_id')))
+            // Por slug ("conductor", "ayudante"): los selectores de W18 saben
+            // que funcion necesitan, pero no el id que le toco a esa funcion.
+            ->when($request->filled('usertype_slug'), fn (Builder $q) => $q
+                ->whereHas('usertype', fn (Builder $t) => $t
+                    ->where('slug', $request->string('usertype_slug')->toString())))
             ->when($request->filled('contract_type'), fn (Builder $q) => $q
                 ->whereHas('contracts', fn (Builder $c) => $c
                     ->where('type', $request->string('contract_type')->toString())

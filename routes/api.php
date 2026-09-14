@@ -8,12 +8,15 @@ use App\Http\Controllers\Api\ContractController;
 use App\Http\Controllers\Api\DniLookupController;
 use App\Http\Controllers\Api\GeographyController;
 use App\Http\Controllers\Api\PersonController;
+use App\Http\Controllers\Api\RouteController;
 use App\Http\Controllers\Api\ScheduleController;
+use App\Http\Controllers\Api\SchedulingController;
 use App\Http\Controllers\Api\UserTypeController;
 use App\Http\Controllers\Api\VacationController;
 use App\Http\Controllers\Api\VehicleColorController;
 use App\Http\Controllers\Api\VehicleController;
 use App\Http\Controllers\Api\VehicleImageController;
+use App\Http\Controllers\Api\VehicleRouteController;
 use App\Http\Controllers\Api\VehicleTypeController;
 use App\Http\Controllers\Api\ZoneController;
 use Illuminate\Support\Facades\DB;
@@ -80,8 +83,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->parameters(['people' => 'person'])
         ->except('show');
 
-    // Zonas (W13) y sus catalogos geograficos
+    // Zonas (W13), su perimetro (W14) y sus rutas (W15)
     Route::apiResource('zones', ZoneController::class);
+    Route::put('zones/{zone}/coords', [ZoneController::class, 'saveCoords']);
+    Route::apiResource('routes', RouteController::class);
     Route::get('districts', [GeographyController::class, 'districts']);
     Route::get('sectors', [GeographyController::class, 'sectors']);
     Route::post('sectors', [GeographyController::class, 'storeSector']);
@@ -94,4 +99,26 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Turnos (W16)
     Route::apiResource('schedules', ScheduleController::class)->except('show');
+
+    // Programacion (W17, W18). Guardar una programacion genera ademas los
+    // recorridos de cada dia, que son los que leen W20 y W21.
+    Route::get('schedulings/summary', [SchedulingController::class, 'summary']);
+    Route::get('schedulings/defaults/{zone}', [SchedulingController::class, 'defaultsForZone']);
+    // La checklist viva del panel derecho de W18: valida sin guardar.
+    Route::post('schedulings/validate', [SchedulingController::class, 'validateDraft']);
+    // Edicion masiva (W19): mismos cambios a varias programaciones.
+    Route::post('schedulings/bulk-update', [SchedulingController::class, 'bulkUpdate']);
+    Route::apiResource('schedulings', SchedulingController::class);
+
+    // Recorridos por dia: calendario (W20) e inicio de recorrido (W21).
+    // No hay store ni destroy: los recorridos los genera la programacion.
+    Route::get('vehicleroutes/summary', [VehicleRouteController::class, 'summary']);
+    Route::post('vehicleroutes/start-batch', [VehicleRouteController::class, 'startBatch']);
+    Route::get('vehicleroutes', [VehicleRouteController::class, 'index']);
+    Route::get('vehicleroutes/{vehicleroute}', [VehicleRouteController::class, 'show']);
+    Route::post('vehicleroutes/{vehicleroute}/start', [VehicleRouteController::class, 'start']);
+    Route::post('vehicleroutes/{vehicleroute}/block', [VehicleRouteController::class, 'block']);
+    Route::post('vehicleroutes/{vehicleroute}/finish', [VehicleRouteController::class, 'finish']);
+    Route::get('vehicleroutes/{vehicleroute}/reserves', [VehicleRouteController::class, 'reserves']);
+    Route::put('vehicleroutes/{vehicleroute}/occupants/{occupant}', [VehicleRouteController::class, 'replaceOccupant']);
 });

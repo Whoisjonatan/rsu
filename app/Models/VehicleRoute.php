@@ -60,4 +60,170 @@ class VehicleRoute extends Model
     {
         return $this->status === 'programado';
     }
+
+    /**
+     * Las tres comprobaciones que el informe pide antes de iniciar (W21):
+     * asistencia del personal, disponibilidad del vehiculo y que el recorrido
+     * siga pendiente.
+     *
+     * Devuelve el detalle, no un booleano, porque W21 no solo decide si el
+     * boton se habilita: tambien tiene que explicar QUE falta y ofrecer el
+     * reemplazo por personal de reserva de quien no marco.
+     *
+     * @return array{ready: bool, blockers: list<string>, occupants: list<array<string, mixed>>}
+     */
+    public function readiness(): array
+    {
+        $date = $this->date_route->toDateString();
+        $blockers = [];
+
+        if (! $this->canStart()) {
+            $blockers[] = match ($this->status) {
+                'iniciado' => 'El recorrido ya está iniciado.',
+                'finalizado' => 'El recorrido ya finalizó.',
+                'bloqueado' => 'El recorrido está bloqueado'.($this->block_reason ? ': '.$this->block_reason : '.'),
+                default => 'El recorrido no está en estado programado.',
+            };
+        }
+
+        $vehicle = $this->vehicle;
+
+        if ($vehicle && $vehicle->status !== 'operativo') {
+            $blockers[] = "El vehículo {$vehicle->code} está en {$vehicle->status}.";
+        }
+
+        // Un vehiculo no puede salir dos veces en el mismo turno del mismo dia.
+        $busy = static::query()
+            ->whereKeyNot($this->getKey())
+            ->where('vehicle_id', $this->vehicle_id)
+            ->whereDate('date_route', $date)
+            ->where('schedule_id', $this->schedule_id)
+            ->whereIn('status', ['iniciado', 'finalizado'])
+            ->exists();
+
+        if ($busy) {
+            $blockers[] = "El vehículo {$vehicle?->code} ya salió en otro recorrido de este turno.";
+        }
+
+        $occupants = [];
+
+        foreach ($this->occupants()->with(['user', 'usertype'])->get() as $occupant) {
+            if ($occupant->status === 'reemplazado') {
+                continue; // Es el registro del saliente; el entrante va aparte.
+            }
+
+            $attended = $occupant->user?->attendedOn($date) ?? false;
+
+            $occupants[] = [
+                'occupant_id' => $occupant->id,
+                'user_id' => $occupant->user_id,
+                'full_name' => $occupant->user?->full_name,
+                'usertype' => $occupant->usertype?->name,
+                'status' => $occupant->status,
+                'attended' => $attended,
+                'replaced_user_id' => $occupant->replaced_user_id,
+            ];
+
+            if (! $attended) {
+                $blockers[] = sprintf(
+                    '%s (%s) no marcó asistencia. Reemplázalo por personal de reserva.',
+                    $occupant->user?->full_name ?? 'El personal asignado',
+                    $occupant->usertype?->name ?? 'sin función',
+                );
+            }
+        }
+
+        if ($occupants === []) {
+            $blockers[] = 'El recorrido no tiene personal asignado.';
+        }
+
+        return [
+            'ready' => $blockers === [],
+            'blockers' => $blockers,
+            'occupants' => $occupants,
+        ];
+    }
+
+    /**
+     * Ocupantes que estan de vacaciones ese dia.
+     *
+     * Es el badge "Vacaciones" de las tarjetas del calendario (W20). Trabaja
+     * sobre las relaciones ya cargadas para que pintar una semana entera no
+     * dispare una consulta por recorrido.
+     *
+     * @return list<array{user_id: int, full_name: string}>
+     */
+    public function staffOnVacation(): array
+    {
+        if (! $this->relationLoaded('occupants')) {
+            return [];
+        }
+
+        $date = $this->date_route->toDateString();
+
+        return $this->occupants
+            ->where('status', '!=', 'reemplazado')
+            ->filter(fn (VehicleOccupant $occupant) => $occupant->user?->vacations
+                ->contains(fn (Vacation $vacation) => $vacation->coversDate($date)) ?? false)
+            ->map(fn (VehicleOccupant $occupant) => [
+                'user_id' => $occupant->user_id,
+                'full_name' => $occupant->user?->full_name,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Personal que puede sustituir a quien no marco: de la misma funcion,
+     * activo, con contrato vigente, sin vacaciones, **que si marco asistencia**
+     * y que no este ya ocupado en otro recorrido del mismo dia y turno.
+     *
+     * @return \Illuminate\Support\Collection<int, User>
+     */
+    public function availableReserves(int $usertypeId)
+    {
+        $date = $this->date_route->toDateString();
+
+        $busyIds = VehicleOccupant::query()
+            ->whereIn('status', ['asignado'])
+            ->whereHas('vehicleRoute', fn (Builder $q) => $q
+                ->whereDate('date_route', $date)
+                ->where('schedule_id', $this->schedule_id))
+            ->pluck('user_id');
+
+        return User::query()
+            ->where('usertype_id', $usertypeId)
+            ->where('status', 'activo')
+            ->whereKeyNot($busyIds->all())
+            ->with(['contracts', 'vacations'])
+            ->get()
+            ->filter(fn (User $person) => $person->datesWithoutContract([$date]) === []
+                && $person->datesOnVacation([$date]) === []
+                && $person->attendedOn($date))
+            ->values();
+    }
+
+    /**
+     * Deja como ocupantes al conductor y al ayudante de la programacion.
+     *
+     * Solo toca a los que siguen en "asignado": un reemplazo por personal de
+     * reserva ya registrado en W21 (status "reemplazado" + replaced_user_id)
+     * no se deshace porque despues se reedite la programacion maestra.
+     */
+    public function syncOccupants(int $driverId, ?int $helperId): void
+    {
+        $wanted = array_values(array_filter([$driverId, $helperId]));
+
+        $this->occupants()
+            ->where('status', 'asignado')
+            ->whereNotIn('user_id', $wanted)
+            ->delete();
+
+        foreach (User::findMany($wanted) as $person) {
+            $this->occupants()->firstOrCreate(
+                ['user_id' => $person->id],
+                ['usertype_id' => $person->usertype_id, 'status' => 'asignado'],
+            );
+        }
+    }
 }

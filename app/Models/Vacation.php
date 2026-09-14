@@ -36,6 +36,14 @@ class Vacation extends Model
             ->where('end_date', '>=', $date);
     }
 
+    /** Espejo en memoria de scopeCovering(); ver la nota en Contract::coversDate(). */
+    public function coversDate(string $date): bool
+    {
+        return $this->status !== 'canceladas'
+            && $this->start_date->toDateString() <= $date
+            && $this->end_date->toDateString() >= $date;
+    }
+
     public function scopeOfYear(Builder $query, int $year): Builder
     {
         return $query->where('year', $year);
