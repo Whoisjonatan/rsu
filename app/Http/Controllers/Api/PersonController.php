@@ -108,6 +108,10 @@ class PersonController extends Controller
             ], 409);
         }
 
+        if ($person->profile_photo_path) {
+            Storage::disk('public')->delete($person->profile_photo_path);
+        }
+
         $person->delete();
 
         return response()->json(null, 204);

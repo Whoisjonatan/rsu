@@ -22,7 +22,8 @@ class VehicleImage extends Model
 
     protected function url(): Attribute
     {
-        return Attribute::get(fn () => Storage::url($this->image));
+        // Se guardan en el disco "public"; el disco por defecto es "local".
+        return Attribute::get(fn () => Storage::disk('public')->url($this->image));
     }
 
     public function vehicle(): BelongsTo

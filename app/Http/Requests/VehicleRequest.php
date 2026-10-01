@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Vehicle;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -23,14 +24,31 @@ class VehicleRequest extends FormRequest
         return [
             'code' => ['required', 'string', 'max:30', Rule::unique('vehicles', 'code')->ignore($id)],
             'plate' => [
-                'required', 'string', 'max:10',
+                'bail', 'required', 'string', 'max:7',
                 'regex:'.Vehicle::PLATE_REGEX,
-                Rule::unique('vehicles', 'plate')->ignore($id),
+                // Una placa es alfanumerica: "123456" o "ABCDEF" no son placas.
+                function (string $attribute, mixed $value, Closure $fail) {
+                    if (! preg_match('/[A-Z]/', $value) || ! preg_match('/[0-9]/', $value)) {
+                        $fail('La placa debe combinar letras y números.');
+                    }
+                },
+                function (string $attribute, mixed $value, Closure $fail) use ($id) {
+                    $taken = Vehicle::withPlate($value)
+                        ->when($id, fn ($query) => $query->whereKeyNot($id))
+                        ->exists();
+
+                    if ($taken) {
+                        $fail('Ya existe un vehículo con esa placa.');
+                    }
+                },
             ],
             'name' => ['nullable', 'string', 'max:120'],
-            'year' => ['required', 'integer', 'min:1950', 'max:'.(date('Y') + 1)],
+            // Un vehiculo no puede ser de un año que todavia no llega.
+            'year' => ['required', 'integer', 'min:1950', 'max:'.now()->year],
             'occupant_capacity' => ['required', 'integer', 'min:0', 'max:60'],
             'load_capacity' => ['required', 'numeric', 'min:0', 'max:999999.99'],
+            'fuel_capacity' => ['required', 'numeric', 'min:0', 'max:999999.99'],
+            'compaction_capacity' => ['nullable', 'numeric', 'min:0', 'max:999999.99'],
             'engine_number' => ['nullable', 'string', 'max:60'],
             'description' => ['nullable', 'string', 'max:255'],
             'status' => ['required', Rule::in(['operativo', 'mantenimiento', 'baja'])],
@@ -38,6 +56,11 @@ class VehicleRequest extends FormRequest
             'model_id' => ['required', Rule::exists('brandmodels', 'id')->where('brand_id', $this->input('brand_id'))],
             'type_id' => ['required', 'exists:vehicletypes,id'],
             'color_id' => ['nullable', 'exists:vehiclecolors,id'],
+            // Solo en el alta: las fotos viajan junto con la ficha (multipart)
+            // y profile_image es el indice de la que queda como perfil.
+            'images' => ['sometimes', 'array', 'max:10'],
+            'images.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
+            'profile_image' => ['sometimes', 'integer', 'min:0'],
         ];
     }
 
@@ -58,11 +81,21 @@ class VehicleRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'plate.required' => 'La placa es obligatoria.',
+            'plate.max' => 'La placa tiene como máximo 7 caracteres.',
             'plate.regex' => 'La placa debe tener el formato XXXXXX, XX-XXXX o XXX-XXX.',
-            'plate.unique' => 'Ya existe un vehiculo con esa placa.',
-            'code.unique' => 'Ya existe un vehiculo con ese codigo.',
-            'year.max' => 'El ano no puede ser posterior al proximo ano.',
+            'code.required' => 'El código es obligatorio.',
+            'code.max' => 'El código tiene como máximo 30 caracteres.',
+            'code.unique' => 'Ya existe un vehículo con ese código.',
+            'year.required' => 'Indica el año del vehículo.',
+            'year.integer' => 'El año debe ser un número entero.',
+            'year.min' => 'El año no puede ser anterior a 1950.',
+            'year.max' => 'El año no puede ser posterior a '.now()->year.'.',
             'model_id.exists' => 'El modelo elegido no pertenece a la marca seleccionada.',
+            'images.max' => 'Puedes subir como máximo 10 imágenes.',
+            'images.*.image' => 'Uno de los archivos no es una imagen.',
+            'images.*.mimes' => 'Las imágenes deben ser JPG, PNG o WEBP.',
+            'images.*.max' => 'Cada imagen puede pesar como máximo 4 MB.',
         ];
     }
 }

@@ -20,6 +20,8 @@ class VehicleResource extends JsonResource
             'year' => $this->year,
             'occupant_capacity' => $this->occupant_capacity,
             'load_capacity' => (float) $this->load_capacity,
+            'fuel_capacity' => $this->fuel_capacity !== null ? (float) $this->fuel_capacity : null,
+            'compaction_capacity' => $this->compaction_capacity !== null ? (float) $this->compaction_capacity : null,
             'engine_number' => $this->engine_number,
             'description' => $this->description,
             'status' => $this->status,

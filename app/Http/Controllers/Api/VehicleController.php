@@ -9,13 +9,16 @@ use App\Models\Vehicle;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 class VehicleController extends Controller
 {
     public function index(Request $request): AnonymousResourceCollection
     {
         $vehicles = Vehicle::query()
-            ->with(['brand', 'model', 'type', 'color'])
+            ->with(['brand', 'model', 'type', 'color', 'profileImage'])
             ->search($request->string('search')->toString())
             ->when($request->filled('brand_id'), fn ($q) => $q->where('brand_id', $request->integer('brand_id')))
             ->when($request->filled('type_id'), fn ($q) => $q->where('type_id', $request->integer('type_id')))
@@ -29,10 +32,33 @@ class VehicleController extends Controller
 
     public function store(VehicleRequest $request): JsonResponse
     {
-        $vehicle = Vehicle::create($request->validated());
+        $data = $request->safe()->except(['images', 'profile_image']);
+        $images = $request->file('images', []);
+        $profileIndex = $request->integer('profile_image');
+        $created = null;
+
+        // La ficha y sus fotos se registran juntas: si una foto falla no
+        // queda un vehiculo a medias, ni archivos huerfanos en disco.
+        try {
+            $vehicle = DB::transaction(function () use ($data, $images, $profileIndex, &$created) {
+                $created = Vehicle::create($data);
+
+                foreach ($images as $index => $file) {
+                    $created->addImage($file, $index === $profileIndex);
+                }
+
+                return $created;
+            });
+        } catch (Throwable $e) {
+            if ($created) {
+                Storage::disk('public')->deleteDirectory('vehicles/'.$created->id);
+            }
+
+            throw $e;
+        }
 
         // Envuelto en "data", igual que update(): una sola forma por recurso.
-        return (new VehicleResource($vehicle->load(['brand', 'model', 'type', 'color'])))
+        return (new VehicleResource($vehicle->load(['brand', 'model', 'type', 'color', 'images'])))
             ->response()
             ->setStatusCode(201);
     }
@@ -60,6 +86,8 @@ class VehicleController extends Controller
         }
 
         $vehicle->delete();
+        // Las filas de vehicleimages caen en cascada; los archivos hay que borrarlos.
+        Storage::disk('public')->deleteDirectory('vehicles/'.$vehicle->id);
 
         return response()->json(null, 204);
     }

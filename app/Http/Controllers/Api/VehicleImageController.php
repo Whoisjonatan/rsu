@@ -23,21 +23,7 @@ class VehicleImageController extends Controller
             'profile' => ['sometimes', 'boolean'],
         ]);
 
-        $path = $request->file('image')->store('vehicles/'.$vehicle->id, 'public');
-
-        // La primera imagen del vehiculo queda como perfil si no hay otra.
-        $isProfile = $request->boolean('profile') || ! $vehicle->images()->where('profile', true)->exists();
-
-        $image = DB::transaction(function () use ($vehicle, $path, $isProfile) {
-            if ($isProfile) {
-                $vehicle->images()->update(['profile' => false]);
-            }
-
-            return $vehicle->images()->create([
-                'image' => $path,
-                'profile' => $isProfile,
-            ]);
-        });
+        $image = $vehicle->addImage($request->file('image'), $request->boolean('profile'));
 
         return response()->json(new VehicleImageResource($image), 201);
     }

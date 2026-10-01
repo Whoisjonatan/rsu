@@ -7,6 +7,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 class Vehicle extends Model
 {
@@ -15,7 +19,7 @@ class Vehicle extends Model
 
     protected $fillable = [
         'name', 'code', 'plate', 'year', 'occupant_capacity', 'load_capacity',
-        'engine_number', 'description', 'status',
+        'fuel_capacity', 'compaction_capacity', 'engine_number', 'description', 'status',
         'brand_id', 'model_id', 'type_id', 'color_id',
     ];
 
@@ -25,6 +29,8 @@ class Vehicle extends Model
             'year' => 'integer',
             'occupant_capacity' => 'integer',
             'load_capacity' => 'decimal:2',
+            'fuel_capacity' => 'decimal:2',
+            'compaction_capacity' => 'decimal:2',
         ];
     }
 
@@ -58,6 +64,30 @@ class Vehicle extends Model
         return $this->hasOne(VehicleImage::class)->where('profile', true);
     }
 
+    /**
+     * Guarda la foto en disco y la registra. Queda como perfil si se pide o
+     * si el vehiculo aun no tiene una; en ese caso desplaza a la anterior.
+     */
+    public function addImage(UploadedFile $file, bool $asProfile = false): VehicleImage
+    {
+        $path = $file->store('vehicles/'.$this->id, 'public');
+        $asProfile = $asProfile || ! $this->images()->where('profile', true)->exists();
+
+        try {
+            return DB::transaction(function () use ($path, $asProfile) {
+                if ($asProfile) {
+                    $this->images()->update(['profile' => false]);
+                }
+
+                return $this->images()->create(['image' => $path, 'profile' => $asProfile]);
+            });
+        } catch (Throwable $e) {
+            Storage::disk('public')->delete($path);
+
+            throw $e;
+        }
+    }
+
     public function schedulings(): HasMany
     {
         return $this->hasMany(Scheduling::class);
@@ -66,6 +96,14 @@ class Vehicle extends Model
     public function vehicleRoutes(): HasMany
     {
         return $this->hasMany(VehicleRoute::class);
+    }
+
+    /**
+     * Misma placa sin importar el guion: B2K841 y B2K-841 son el mismo vehiculo.
+     */
+    public function scopeWithPlate(Builder $query, string $plate): Builder
+    {
+        return $query->whereRaw("REPLACE(plate, '-', '') = ?", [str_replace('-', '', strtoupper($plate))]);
     }
 
     public function scopeOperational(Builder $query): Builder
