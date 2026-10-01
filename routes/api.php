@@ -49,6 +49,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Maestros de vehiculos (W03)
     Route::apiResource('brands', BrandController::class)->except('show');
+    Route::post('brands/{brand}/logo', [BrandController::class, 'uploadLogo']);
+    Route::delete('brands/{brand}/logo', [BrandController::class, 'deleteLogo']);
     Route::apiResource('brandmodels', BrandModelController::class)->except('show');
     Route::apiResource('vehicletypes', VehicleTypeController::class)->except('show');
     Route::apiResource('vehiclecolors', VehicleColorController::class)->except('show');

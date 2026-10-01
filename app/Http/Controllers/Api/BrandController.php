@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Brand;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class BrandController extends Controller
@@ -37,9 +38,39 @@ class BrandController extends Controller
             ], 409);
         }
 
+        if ($brand->logo) {
+            Storage::disk('public')->delete($brand->logo);
+        }
+
         $brand->delete();
 
         return response()->json(null, 204);
+    }
+
+    /** Logo de la marca (W03): subir, reemplazando el anterior, y eliminar. */
+    public function uploadLogo(Request $request, Brand $brand): JsonResponse
+    {
+        $request->validate([
+            'logo' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+        ]);
+
+        if ($brand->logo) {
+            Storage::disk('public')->delete($brand->logo);
+        }
+
+        $brand->update(['logo' => $request->file('logo')->store('brands', 'public')]);
+
+        return response()->json($brand->fresh());
+    }
+
+    public function deleteLogo(Brand $brand): JsonResponse
+    {
+        if ($brand->logo) {
+            Storage::disk('public')->delete($brand->logo);
+            $brand->update(['logo' => null]);
+        }
+
+        return response()->json($brand->fresh());
     }
 
     /**
