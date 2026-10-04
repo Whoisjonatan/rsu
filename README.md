@@ -1,59 +1,112 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# RSU Reciclaje
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Sistema informático para el proyecto de reciclaje del área de RSU — Escuela de Ingeniería de
+Sistemas y Computación, USAT.
 
-## About Laravel
+**Todo vive en esta carpeta:** el panel web (vistas Blade) y el API REST que consumirá la app
+móvil. No hay un front aparte que levantar.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+```
+C:\laragon\www\rsu-back     Laravel 12 + Eloquent + Blade + Alpine.js + Tailwind 4
+  ├── resources/views/       El panel web (las 21 pantallas del informe)
+  ├── routes/web.php         Pantallas, con sesión por cookie
+  └── routes/api.php         API REST para la app móvil, con token Bearer de Sanctum
+```
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Requisitos
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- PHP 8.2+ y Composer (vienen con Laragon)
+- Node.js 20+ (solo para compilar los estilos y el JavaScript)
+- MySQL 8 (servicio de Laragon)
 
-## Learning Laravel
+## Cómo levantar el proyecto
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+1. **Iniciar MySQL** desde el panel de Laragon (botón *Iniciar todo*).
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+2. **La primera vez**:
 
-## Laravel Sponsors
+   ```bash
+   composer install
+   npm install
+   php artisan migrate --seed   # crea las tablas y carga los datos iniciales
+   php artisan storage:link     # para servir las imágenes de vehículos y fotos
+   ```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+3. **Compilar el front** (estilos y JavaScript):
 
-### Premium Partners
+   ```bash
+   npm run build     # una vez; o `npm run dev` mientras se editan vistas, para recargar al vuelo
+   ```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+4. **Abrir** `http://rsu-back.test` (el vhost de Laragon). Sin Laragon, `php artisan serve`
+   y `http://localhost:8000`. `composer dev` levanta servidor, Vite y logs a la vez.
 
-## Contributing
+**Acceso de prueba:** `admin@rsu.usat.edu.pe` / `password` (también entra con el DNI
+`10000001`). Todo el personal sembrado usa la misma clave.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+**Terminal de marcación:** `/marcacion` — pantalla pública, sin sesión iniciada, pensada para
+un equipo compartido en el punto de fichaje. El trabajador se identifica con su DNI y su clave.
 
-## Code of Conduct
+## Estado
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Las **21 pantallas** del informe están implementadas en Blade (W01–W21).
 
-## Security Vulnerabilities
+| Módulo | Pantallas |
+|--------|-----------|
+| Acceso y panel | W01, W02 |
+| Vehículos | W03 catálogos · W04 listado · W05 ficha con imágenes |
+| Personal | W06 funciones · W07 listado · W08 ficha · W09 contratos · W10 vacaciones |
+| Asistencias | W11 terminal de marcación · W12 reporte (con exportación CSV) |
+| Zonas | W13 zonas · W14 perímetro · W15 rutas (mapas con Leaflet) |
+| Programación | W16 turnos · W17 listado · W18 ficha · W19 edición masiva · W20 calendario · W21 inicio de recorrido |
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Decisiones técnicas
 
-## License
+| Capa | Herramienta | Motivo |
+|------|-------------|--------|
+| ORM | **Eloquent** | ORM oficial de Laravel |
+| Vistas | **Blade** + componentes (`resources/views/components`) | Un solo proyecto; el servidor pinta las pantallas |
+| Interactividad | **Alpine.js** | Modales, pestañas, mapas y la checklist en vivo, sin un framework de SPA |
+| Estilos | **Tailwind CSS 4** | Tokens de la paleta en `@theme` (`resources/css/app.css`) |
+| Iconos | **Lucide** (`mallardduck/blade-lucide-icons`) | Los mismos del diseño, como componentes `<x-lucide-…>` |
+| Mapas | **Leaflet** + OpenStreetMap | Sin API key ni coste |
+| Autenticación web | **Sesión por cookie** | Lo natural en Blade, con CSRF |
+| Autenticación API | **Sanctum con tokens Bearer** | La app móvil (React Native) |
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### Un API, dos formas de entrar
+
+- Las vistas Blade usan la **sesión**. Las pocas pantallas que trabajan en vivo (consulta de
+  DNI, checklist de W18, simulación de W19, inicio de recorrido W21) llaman al mismo `/api`
+  con esa cookie: `statefulApi()` en `bootstrap/app.php` hace que Sanctum la acepte.
+- La **app móvil** entra con `POST /api/login` y manda `Authorization: Bearer …`, como antes.
+
+Las reglas de negocio no se duplican: viven en los modelos, en los FormRequest y en
+`app/Services`, y las usan tanto los controladores web (`app/Http/Controllers/Web`) como los
+del API (`app/Http/Controllers/Api`).
+
+## Configuración relevante
+
+- `.env` — conexión MySQL (`rsu_reciclaje`), `APP_URL`, `APP_LOCALE=es`.
+- `SANCTUM_STATEFUL_DOMAINS` — dominios cuyo JavaScript entra al API con la sesión
+  (`rsu-back.test`, `localhost:8000`…). Si se sirve desde otro dominio, añadirlo aquí.
+- `SESSION_DOMAIN=null` — así la cookie vale tanto en `rsu-back.test` como en `localhost`.
+
+### Consulta de DNI (opcional)
+
+La ficha de personal puede prellenar apellidos y nombres desde el DNI. **RENIEC no tiene API
+pública**, así que se usa un intermediario: **Consultas API**, el servicio contratado que
+también usa Crinver. Con `null` el botón no aparece y todo se llena a mano.
+
+```
+DNI_LOOKUP_DRIVER=consultasapi   # consultasapi | null (desactivado)
+DNI_LOOKUP_TOKEN=
+DNI_LOOKUP_API_KEY=
+```
+
+Ojo: **solo devuelve apellidos y nombres** — ni correo, ni teléfono, ni licencia.
+
+## Documentación
+
+- **[`docs/GUIA-TECNICA.md`](docs/GUIA-TECNICA.md)** — cómo arrancar, el mapa del código,
+  las decisiones cerradas, las trampas descubiertas y cómo funciona cada módulo.
+- [`docs/BITACORA.md`](docs/BITACORA.md) — el detalle cronológico de cada sesión.
