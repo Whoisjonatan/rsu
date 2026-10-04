@@ -35,7 +35,9 @@ Route::middleware('guest')->group(function () {
 // Terminal de marcación (W11): público a propósito. Es un punto de fichaje
 // compartido donde el trabajador se identifica con su DNI y su clave.
 Route::get('marcacion', [AttendanceController::class, 'terminal'])->name('attendances.terminal');
-Route::post('marcacion', [AttendanceController::class, 'mark'])->name('attendances.mark');
+Route::post('marcacion', [AttendanceController::class, 'mark'])
+    ->middleware('throttle:30,1')
+    ->name('attendances.mark');
 
 Route::middleware('auth')->group(function () {
     Route::post('logout', [AuthController::class, 'destroy'])->name('logout');
