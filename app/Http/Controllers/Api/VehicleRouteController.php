@@ -293,39 +293,6 @@ class VehicleRouteController extends Controller
             ? $request->date('date')->format('Y-m-d')
             : now()->toDateString();
 
-        $counts = VehicleRoute::query()
-            ->whereDate('date_route', $date)
-            ->selectRaw('status, COUNT(*) as total')
-            ->groupBy('status')
-            ->pluck('total', 'status');
-
-        // "Personal ausente" del panel: gente con recorrido hoy que no marcó.
-        // Se cuentan personas y no asignaciones, porque alguien programado en
-        // dos turnos del mismo día sigue siendo un solo ausente.
-        $ausentes = VehicleOccupant::query()
-            ->where('status', 'asignado')
-            ->whereHas('vehicleRoute', fn ($q) => $q->whereDate('date_route', $date))
-            ->whereDoesntHave('user.attendances', fn ($q) => $q
-                ->whereDate('date', $date)
-                ->whereIn('status', ['presente', 'tarde']))
-            ->distinct()
-            ->count('user_id');
-
-        $asignados = VehicleOccupant::query()
-            ->where('status', 'asignado')
-            ->whereHas('vehicleRoute', fn ($q) => $q->whereDate('date_route', $date))
-            ->distinct()
-            ->count('user_id');
-
-        return response()->json([
-            'date' => $date,
-            'programado' => (int) ($counts['programado'] ?? 0),
-            'iniciado' => (int) ($counts['iniciado'] ?? 0),
-            'bloqueado' => (int) ($counts['bloqueado'] ?? 0),
-            'finalizado' => (int) ($counts['finalizado'] ?? 0),
-            'total' => (int) $counts->sum(),
-            'personal_asignado' => $asignados,
-            'personal_ausente' => $ausentes,
-        ]);
+        return response()->json(VehicleRoute::daySummary($date));
     }
 }

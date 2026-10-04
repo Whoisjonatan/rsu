@@ -9,9 +9,6 @@ use App\Models\Vehicle;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use Throwable;
 
 class VehicleController extends Controller
 {
@@ -32,30 +29,12 @@ class VehicleController extends Controller
 
     public function store(VehicleRequest $request): JsonResponse
     {
-        $data = $request->safe()->except(['images', 'profile_image']);
-        $images = $request->file('images', []);
-        $profileIndex = $request->integer('profile_image');
-        $created = null;
-
-        // La ficha y sus fotos se registran juntas: si una foto falla no
-        // queda un vehiculo a medias, ni archivos huerfanos en disco.
-        try {
-            $vehicle = DB::transaction(function () use ($data, $images, $profileIndex, &$created) {
-                $created = Vehicle::create($data);
-
-                foreach ($images as $index => $file) {
-                    $created->addImage($file, $index === $profileIndex);
-                }
-
-                return $created;
-            });
-        } catch (Throwable $e) {
-            if ($created) {
-                Storage::disk('public')->deleteDirectory('vehicles/'.$created->id);
-            }
-
-            throw $e;
-        }
+        // La ficha y sus fotos se registran juntas (ver Vehicle::createWithImages).
+        $vehicle = Vehicle::createWithImages(
+            $request->safe()->except(['images', 'profile_image']),
+            $request->file('images', []),
+            $request->integer('profile_image'),
+        );
 
         // Envuelto en "data", igual que update(): una sola forma por recurso.
         return (new VehicleResource($vehicle->load(['brand', 'model', 'type', 'color', 'images'])))
@@ -79,15 +58,11 @@ class VehicleController extends Controller
 
     public function destroy(Vehicle $vehicle): JsonResponse
     {
-        if ($vehicle->schedulings()->exists() || $vehicle->vehicleRoutes()->exists()) {
-            return response()->json([
-                'message' => 'No se puede eliminar: el vehiculo tiene programaciones o recorridos registrados.',
-            ], 409);
+        if ($blocker = $vehicle->deletionBlocker()) {
+            return response()->json(['message' => $blocker], 409);
         }
 
-        $vehicle->delete();
-        // Las filas de vehicleimages caen en cascada; los archivos hay que borrarlos.
-        Storage::disk('public')->deleteDirectory('vehicles/'.$vehicle->id);
+        $vehicle->deleteWithImages();
 
         return response()->json(null, 204);
     }
@@ -95,11 +70,6 @@ class VehicleController extends Controller
     /** Contadores de la barra superior de W04. */
     public function summary(): JsonResponse
     {
-        return response()->json([
-            'total' => Vehicle::count(),
-            'operativo' => Vehicle::where('status', 'operativo')->count(),
-            'mantenimiento' => Vehicle::where('status', 'mantenimiento')->count(),
-            'baja' => Vehicle::where('status', 'baja')->count(),
-        ]);
+        return response()->json(Vehicle::summary());
     }
 }

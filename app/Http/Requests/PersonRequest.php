@@ -97,4 +97,33 @@ class PersonRequest extends FormRequest
             'password.min' => 'La contraseña debe tener al menos 8 caracteres.',
         ];
     }
+
+    /**
+     * Lo validado, listo para guardar. Una contraseña vacía en la edición
+     * significa "no la cambies".
+     *
+     * @return array<string, mixed>
+     */
+    public function personData(): array
+    {
+        $data = $this->validated();
+
+        if (blank($data['password'] ?? null)) {
+            unset($data['password']);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Fotografía del personal (W08).
+     *
+     * @return array<string, mixed>
+     */
+    public static function photoRules(): array
+    {
+        return [
+            'photo' => ['required', 'image', 'mimes:jpg,jpeg,png', 'max:4096'],
+        ];
+    }
 }

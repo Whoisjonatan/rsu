@@ -130,4 +130,77 @@ class Vehicle extends Model
                 ->orWhereHas('brand', fn (Builder $b) => $b->where('name', 'like', $like));
         });
     }
+
+    /**
+     * Contadores por estado: la barra superior de W04 y el panel (W02).
+     *
+     * @return array{total: int, operativo: int, mantenimiento: int, baja: int}
+     */
+    public static function summary(): array
+    {
+        $counts = static::query()
+            ->selectRaw('status, COUNT(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        return [
+            'total' => (int) $counts->sum(),
+            'operativo' => (int) ($counts['operativo'] ?? 0),
+            'mantenimiento' => (int) ($counts['mantenimiento'] ?? 0),
+            'baja' => (int) ($counts['baja'] ?? 0),
+        ];
+    }
+
+    /**
+     * Por qué no se puede eliminar, o null si se puede. Lo comparten el API y
+     * las vistas Blade para no tener dos versiones de la misma regla.
+     */
+    public function deletionBlocker(): ?string
+    {
+        if ($this->schedulings()->exists() || $this->vehicleRoutes()->exists()) {
+            return 'No se puede eliminar: el vehículo tiene programaciones o recorridos registrados.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Elimina el vehículo y sus fotos. Las filas de vehicleimages caen en
+     * cascada; los archivos hay que borrarlos a mano.
+     */
+    public function deleteWithImages(): void
+    {
+        $this->delete();
+        Storage::disk('public')->deleteDirectory('vehicles/'.$this->id);
+    }
+
+    /**
+     * Alta de la ficha junto con sus fotos. Si una foto falla no queda un
+     * vehículo a medias, ni archivos huérfanos en disco.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  list<UploadedFile>  $images
+     */
+    public static function createWithImages(array $data, array $images = [], int $profileIndex = 0): self
+    {
+        $created = null;
+
+        try {
+            return DB::transaction(function () use ($data, $images, $profileIndex, &$created) {
+                $created = static::create($data);
+
+                foreach (array_values($images) as $index => $file) {
+                    $created->addImage($file, $index === $profileIndex);
+                }
+
+                return $created;
+            });
+        } catch (Throwable $e) {
+            if ($created) {
+                Storage::disk('public')->deleteDirectory('vehicles/'.$created->id);
+            }
+
+            throw $e;
+        }
+    }
 }

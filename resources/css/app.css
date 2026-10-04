@@ -1,11 +1,215 @@
 @import 'tailwindcss';
+@import 'leaflet/dist/leaflet.css';
 
-@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 @source '../**/*.blade.php';
 @source '../**/*.js';
 
+/*
+ * Paleta del sistema: verde bosque (#173f35) y crema (#F3EFE6). La estructura
+ * viene de los wireframes en grises (tarjetas blancas, bordes suaves); el fondo
+ * es crema y el verde aporta el botón primario, la barra lateral y los estados
+ * operativos. brand-600 es exactamente el verde institucional; el resto de la
+ * escala se derivó con el mismo tono.
+ */
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+  --color-brand-50: #eef4f1;
+  --color-brand-100: #d7e7e0;
+  --color-brand-200: #b1cfc3;
+  --color-brand-300: #85b2a1;
+  --color-brand-400: #5a907d;
+  --color-brand-500: #2e6b59;
+  --color-brand-600: #173f35;
+  --color-brand-700: #123429;
+  --color-brand-800: #0e2a22;
+  --color-brand-900: #0a201a;
+
+  --color-cream-50: #faf8f3;
+  --color-cream-100: #f3efe6;
+  --color-cream-200: #e6dfd0;
+  --color-cream-300: #d4c9b3;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-cream-100 font-sans text-[13px] text-stone-700 antialiased;
+  }
+
+  /* Anillo de foco consistente en toda la app. */
+  :focus-visible {
+    @apply outline-brand-600 outline-2 outline-offset-2;
+  }
+
+  /* Alpine oculta estos nodos hasta inicializarse: sin esto parpadean. */
+  [x-cloak] {
+    display: none !important;
+  }
+}
+
+@layer components {
+  /* Campo de formulario: la misma caja para input, select y textarea. */
+  .field {
+    @apply w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-[13px] text-stone-900
+      transition placeholder:text-stone-400
+      focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none
+      disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-500;
+  }
+
+  .field-error {
+    @apply border-red-400 focus:border-red-500 focus:ring-red-500/20;
+  }
+
+  .label {
+    @apply mb-1.5 block text-[11px] font-semibold tracking-wide text-stone-600 uppercase;
+  }
+
+  /* Botones: las mismas variantes que tenía el componente Button de React. */
+  .btn {
+    @apply inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md px-4
+      text-[13px] font-medium transition disabled:cursor-not-allowed;
+  }
+
+  .btn-sm {
+    @apply h-8 gap-1.5 px-3 text-[12px];
+  }
+
+  .btn-primary {
+    @apply bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:bg-brand-800 disabled:bg-brand-300;
+  }
+
+  .btn-secondary {
+    @apply border border-stone-300 bg-white text-stone-700 hover:bg-stone-50 active:bg-stone-100
+      disabled:text-stone-400;
+  }
+
+  .btn-ghost {
+    @apply text-stone-600 hover:bg-stone-100 hover:text-stone-900;
+  }
+
+  .btn-danger {
+    @apply border border-red-200 bg-white text-red-600 hover:bg-red-50 active:bg-red-100
+      disabled:text-red-300;
+  }
+
+  /* Botón cuadrado de solo icono: las acciones de cada fila. */
+  .icon-btn {
+    @apply grid size-7 cursor-pointer place-items-center rounded-md text-stone-400 transition
+      hover:bg-stone-100 hover:text-stone-700;
+  }
+
+  .icon-btn-danger {
+    @apply hover:bg-red-50 hover:text-red-600;
+  }
+
+  .link {
+    @apply text-[12px] font-medium text-brand-500 hover:text-brand-600;
+  }
+
+  /* Tabla de datos (lo que antes era DataTable). */
+  .data-table {
+    @apply w-full border-collapse text-[13px];
+  }
+
+  .data-table thead tr {
+    @apply border-b border-stone-200 bg-stone-50;
+  }
+
+  .data-table th {
+    @apply px-4 py-2.5 text-left text-[11px] font-semibold tracking-wide text-stone-500 uppercase;
+  }
+
+  .data-table tbody tr {
+    @apply border-b border-stone-100 transition last:border-0 hover:bg-stone-50/70;
+  }
+
+  .data-table td {
+    @apply px-4 py-3 text-stone-600;
+  }
+}
+
+/* Camión recolector animado (components/garbage-truck.blade.php). */
+.truck-wheel,
+.truck-puff {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.truck-wheel {
+  animation: truck-spin 0.6s linear infinite;
+}
+
+.truck-body {
+  animation: truck-bob 0.4s ease-in-out infinite;
+}
+
+.truck-drive {
+  animation: truck-drive 3s ease-in-out infinite;
+}
+
+.truck-road {
+  animation: truck-road 0.35s linear infinite;
+}
+
+.truck-puff {
+  animation: truck-puff 0.9s ease-out infinite;
+}
+
+.truck-speed {
+  animation: truck-speed 0.9s linear infinite;
+}
+
+@keyframes truck-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes truck-bob {
+  50% {
+    transform: translateY(-1.2px);
+  }
+}
+
+/* Acelera hacia adelante y vuelve a su sitio, como en el tráfico. */
+@keyframes truck-drive {
+  50% {
+    transform: translateX(8px);
+  }
+}
+
+@keyframes truck-road {
+  to {
+    stroke-dashoffset: 18;
+  }
+}
+
+@keyframes truck-puff {
+  from {
+    transform: translate(0, 0) scale(0.4);
+    opacity: 0.8;
+  }
+  to {
+    transform: translate(-14px, -8px) scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes truck-speed {
+  from {
+    transform: translateX(6px);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-8px);
+    opacity: 0;
+  }
 }

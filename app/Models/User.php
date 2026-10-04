@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -216,5 +218,135 @@ class User extends Authenticatable
     public function isDriver(): bool
     {
         return $this->usertype?->slug === UserType::DRIVER;
+    }
+
+    /**
+     * Login y terminal de marcación: el mismo campo acepta correo o DNI,
+     * porque el personal marca asistencia con DNI y clave (W11) y la maqueta
+     * usa un único campo "Usuario" (W01).
+     */
+    public static function findForLogin(string $username): ?self
+    {
+        return static::with('usertype')
+            ->where('email', $username)
+            ->orWhere('dni', $username)
+            ->first();
+    }
+
+    /** URL pública de la foto (W08), o null si no tiene. */
+    protected function photoUrl(): Attribute
+    {
+        return Attribute::get(fn () => $this->profile_photo_path
+            ? asset('storage/'.$this->profile_photo_path)
+            : null);
+    }
+
+    /**
+     * "Solo personal nombrado y a contrato permanente" puede registrar
+     * vacaciones (W10).
+     */
+    public function isVacationEligible(): bool
+    {
+        return $this->contracts()
+            ->activeOn(now()->toDateString())
+            ->whereIn('type', Contract::PERMANENT_TYPES)
+            ->exists();
+    }
+
+    /**
+     * Filtros del listado de personal (W07). Los comparten el API y la vista
+     * Blade, así los dos filtran exactamente igual.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    public function scopeFilter(Builder $query, array $filters): Builder
+    {
+        $today = now()->toDateString();
+        $search = trim((string) ($filters['search'] ?? ''));
+
+        return $query
+            ->when($search !== '', function (Builder $q) use ($search) {
+                $like = '%'.$search.'%';
+                $q->where(fn (Builder $inner) => $inner
+                    ->where('dni', 'like', $like)
+                    ->orWhere('name', 'like', $like)
+                    ->orWhere('lastname', 'like', $like)
+                    ->orWhere('email', 'like', $like));
+            })
+            ->when(filled($filters['usertype_id'] ?? null), fn (Builder $q) => $q
+                ->where('usertype_id', (int) $filters['usertype_id']))
+            // Por slug ("conductor", "ayudante"): los selectores de W18 saben
+            // qué función necesitan, pero no el id que le tocó a esa función.
+            ->when(filled($filters['usertype_slug'] ?? null), fn (Builder $q) => $q
+                ->ofFunction((string) $filters['usertype_slug']))
+            ->when(filled($filters['contract_type'] ?? null), fn (Builder $q) => $q
+                ->whereHas('contracts', fn (Builder $c) => $c
+                    ->where('type', (string) $filters['contract_type'])
+                    ->activeOn($today)))
+            // "Estado" aquí es el derivado de W07, no la columna `status`.
+            ->when(filled($filters['state'] ?? null), function (Builder $q) use ($filters, $today) {
+                match ((string) $filters['state']) {
+                    'activo' => $q->where('status', 'activo')
+                        ->whereHas('contracts', fn (Builder $c) => $c->activeOn($today))
+                        ->whereDoesntHave('vacations', fn (Builder $v) => $v->covering($today)),
+                    'vacaciones' => $q->whereHas('vacations', fn (Builder $v) => $v->covering($today)),
+                    'culminado' => $q->where('status', 'activo')
+                        ->has('contracts')
+                        ->whereDoesntHave('contracts', fn (Builder $c) => $c->activeOn($today)),
+                    'sin_contrato' => $q->where('status', 'activo')->doesntHave('contracts'),
+                    'inactivo' => $q->where('status', 'inactivo'),
+                    default => $q,
+                };
+            });
+    }
+
+    /**
+     * Contadores de la barra superior de W07.
+     *
+     * @return array{total: int, con_contrato: int, de_vacaciones: int}
+     */
+    public static function staffSummary(): array
+    {
+        $today = now()->toDateString();
+
+        return [
+            'total' => static::count(),
+            'con_contrato' => static::whereHas('contracts', fn (Builder $c) => $c->activeOn($today))->count(),
+            'de_vacaciones' => static::whereHas('vacations', fn (Builder $v) => $v->covering($today))->count(),
+        ];
+    }
+
+    /** Por qué no se puede eliminar a esta persona, o null si se puede. */
+    public function deletionBlocker(?self $actor = null): ?string
+    {
+        if ($this->occupancies()->exists()) {
+            return 'No se puede eliminar: la persona tiene recorridos asignados.';
+        }
+
+        if ($actor && $this->is($actor)) {
+            return 'No puedes eliminar tu propio usuario.';
+        }
+
+        return null;
+    }
+
+    /** Elimina a la persona y su foto del disco. */
+    public function deleteWithPhoto(): void
+    {
+        if ($this->profile_photo_path) {
+            Storage::disk('public')->delete($this->profile_photo_path);
+        }
+
+        $this->delete();
+    }
+
+    /** Reemplaza la foto de perfil, borrando la anterior del disco. */
+    public function replacePhoto(?UploadedFile $file): void
+    {
+        if ($this->profile_photo_path) {
+            Storage::disk('public')->delete($this->profile_photo_path);
+        }
+
+        $this->update(['profile_photo_path' => $file?->store('people', 'public')]);
     }
 }

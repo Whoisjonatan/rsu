@@ -5,6 +5,10 @@ namespace App\Providers;
 use App\Services\Dni\ConsultasApiLookup;
 use App\Services\Dni\DniLookup;
 use App\Services\Dni\NullLookup;
+use App\Support\Status;
+use Carbon\Carbon;
+use Illuminate\Foundation\AliasLoader;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -28,6 +32,13 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        //
+        // Los listados Blade usan el mismo pie de paginación que tenía el front en React.
+        Paginator::defaultView('pagination.rsu');
+
+        // "lunes, 4 de octubre" en vez de "Monday, October 4".
+        Carbon::setLocale(config('app.locale'));
+
+        // Las vistas escriben Status::tone(...) sin importar la clase.
+        AliasLoader::getInstance()->alias('Status', Status::class);
     }
 }

@@ -12,9 +12,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Autenticación por tokens Bearer de Sanctum: el mismo mecanismo para el
-        // SPA web y para la app móvil (React Native). Sin sesión por cookie, así
-        // que el front puede apuntar a localhost:8000 o a rsu-back.test.
+        // Dos formas de entrar, un solo API:
+        // - Las vistas Blade usan la sesión por cookie. Las pocas pantallas que
+        //   consultan el API en vivo (DNI, checklist de W18, W19, W21) mandan esa
+        //   misma cookie, y statefulApi() hace que Sanctum la acepte.
+        // - La app móvil sigue entrando con token Bearer, como hasta ahora.
+        $middleware->statefulApi();
+
+        $middleware->redirectGuestsTo('/login');
+        $middleware->redirectUsersTo('/inicio');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

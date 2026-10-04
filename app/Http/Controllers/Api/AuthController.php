@@ -24,10 +24,7 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $user = User::with('usertype')
-            ->where('email', $data['username'])
-            ->orWhere('dni', $data['username'])
-            ->first();
+        $user = User::findForLogin($data['username']);
 
         if (! $user || ! Hash::check($data['password'], $user->password)) {
             throw ValidationException::withMessages([
