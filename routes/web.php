@@ -10,7 +10,6 @@ use App\Http\Controllers\Web\PersonController;
 use App\Http\Controllers\Web\RouteController;
 use App\Http\Controllers\Web\ScheduleController;
 use App\Http\Controllers\Web\SchedulingController;
-use App\Http\Controllers\Web\SectorController;
 use App\Http\Controllers\Web\UserTypeController;
 use App\Http\Controllers\Web\VacationController;
 use App\Http\Controllers\Web\VehicleCatalogController;
@@ -103,7 +102,8 @@ Route::middleware('auth')->group(function () {
     // Reporte de asistencias (W12).
     Route::get('asistencias', [AttendanceController::class, 'report'])->name('attendances.report');
 
-    // Zonas (W13) con sus sectores, perímetro (W14) y rutas (W15).
+    // Zonas (W13), su perímetro (W14) y rutas (W15). Los sectores se crean desde
+    // el modal de zona contra el API (POST /api/sectors), sin salir del formulario.
     Route::get('zonas', [ZoneController::class, 'index'])->name('zones.index');
     Route::post('zonas', [ZoneController::class, 'store'])->name('zones.store');
     Route::put('zonas/{zone}', [ZoneController::class, 'update'])->name('zones.update');
@@ -111,9 +111,6 @@ Route::middleware('auth')->group(function () {
     Route::get('zonas/{zone}/perimetro', [ZoneController::class, 'perimeter'])->name('zones.perimeter');
     Route::put('zonas/{zone}/perimetro', [ZoneController::class, 'savePerimeter'])->name('zones.perimeter.update');
 
-    Route::post('sectores', [SectorController::class, 'store'])->name('sectors.store');
-    Route::put('sectores/{sector}', [SectorController::class, 'update'])->name('sectors.update');
-    Route::delete('sectores/{sector}', [SectorController::class, 'destroy'])->name('sectors.destroy');
 
     Route::get('rutas', [RouteController::class, 'index'])->name('routes.index');
     Route::post('rutas', [RouteController::class, 'store'])->name('routes.store');

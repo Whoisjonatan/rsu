@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\SectorRequest;
 use App\Models\District;
 use App\Models\Sector;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 /**
  * Catalogos geograficos que alimentan el alta de zona (W13).
@@ -36,49 +36,22 @@ class GeographyController extends Controller
         return response()->json($sectors);
     }
 
-    public function storeSector(Request $request): JsonResponse
+    public function storeSector(SectorRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:120'],
-            'area' => ['nullable', 'numeric', 'min:0'],
-            'description' => ['nullable', 'string', 'max:255'],
-            'district_id' => ['required', 'exists:districts,id'],
-        ]);
-
-        $exists = Sector::where('district_id', $data['district_id'])
-            ->where('name', $data['name'])
-            ->exists();
-
-        if ($exists) {
-            return response()->json([
-                'message' => 'Ese distrito ya tiene un sector con ese nombre.',
-                'errors' => ['name' => ['Ese distrito ya tiene un sector con ese nombre.']],
-            ], 422);
-        }
-
-        return response()->json(Sector::create($data), 201);
+        return response()->json(Sector::create($request->validated()), 201);
     }
 
-    public function updateSector(Request $request, Sector $sector): JsonResponse
+    public function updateSector(SectorRequest $request, Sector $sector): JsonResponse
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:120'],
-            'area' => ['nullable', 'numeric', 'min:0'],
-            'description' => ['nullable', 'string', 'max:255'],
-            'district_id' => ['required', 'exists:districts,id'],
-        ]);
-
-        $sector->update($data);
+        $sector->update($request->validated());
 
         return response()->json($sector);
     }
 
     public function destroySector(Sector $sector): JsonResponse
     {
-        if ($sector->zones()->exists()) {
-            return response()->json([
-                'message' => 'No se puede eliminar: el sector tiene zonas asociadas.',
-            ], 409);
+        if ($blocker = $sector->deletionBlocker()) {
+            return response()->json(['message' => $blocker], 409);
         }
 
         $sector->delete();

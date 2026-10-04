@@ -7,7 +7,6 @@ use App\Http\Requests\RouteRequest;
 use App\Models\Route;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Rutas de recoleccion (W15).
@@ -42,41 +41,22 @@ class RouteController extends Controller
 
     public function store(RouteRequest $request): JsonResponse
     {
-        $route = DB::transaction(function () use ($request) {
-            $data = $request->validated();
-            $route = Route::create($data);
-            $route->zones()->sync($data['zone_ids']);
-
-            return $route;
-        });
+        $route = (new Route)->saveWithZones($request->validated());
 
         return response()->json($route->load('zones:id,name'), 201);
     }
 
     public function update(RouteRequest $request, Route $route): JsonResponse
     {
-        DB::transaction(function () use ($request, $route) {
-            $data = $request->validated();
-            $route->update($data);
-            $route->zones()->sync($data['zone_ids']);
-        });
+        $route->saveWithZones($request->validated());
 
         return response()->json($route->load('zones:id,name'));
     }
 
     public function destroy(Route $route): JsonResponse
     {
-        // Una ruta en uso no se borra: dejaria programaciones apuntando al aire.
-        if ($route->schedulings()->exists()) {
-            $count = $route->schedulings()->count();
-
-            return response()->json([
-                'message' => sprintf(
-                    'No se puede eliminar: la ruta está usada por %d %s. Cámbiala a inactiva.',
-                    $count,
-                    $count === 1 ? 'programación' : 'programaciones',
-                ),
-            ], 409);
+        if ($blocker = $route->deletionBlocker()) {
+            return response()->json(['message' => $blocker], 409);
         }
 
         $route->delete();

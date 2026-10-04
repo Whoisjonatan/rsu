@@ -24,4 +24,12 @@ class Sector extends Model
     {
         return $this->hasMany(Zone::class);
     }
+
+    /** Por qué no se puede eliminar, o null si se puede. */
+    public function deletionBlocker(): ?string
+    {
+        return $this->zones()->exists()
+            ? 'No se puede eliminar: el sector tiene zonas asociadas.'
+            : null;
+    }
 }
