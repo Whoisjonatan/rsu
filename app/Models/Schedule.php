@@ -40,6 +40,14 @@ class Schedule extends Model
         return $this->hasMany(Attendance::class);
     }
 
+    /** Por qué no se puede eliminar, o null si se puede. */
+    public function deletionBlocker(): ?string
+    {
+        return $this->schedulings()->exists() || $this->vehicleRoutes()->exists()
+            ? 'No se puede eliminar: el turno tiene programaciones o recorridos.'
+            : null;
+    }
+
     /** Hora de inicio del turno en la fecha dada. */
     public function startsAt(CarbonImmutable $date): CarbonImmutable
     {

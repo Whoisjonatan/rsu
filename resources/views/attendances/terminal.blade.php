@@ -61,7 +61,9 @@
                 </button>
 
                 @if ($result && $result['status'] !== 'out_of_hours')
-                    @php($already = $result['status'] === 'already_marked')
+                    @php
+                        $already = $result['status'] === 'already_marked';
+                    @endphp
                     {{-- El acuse se borra solo, para que el siguiente trabajador no lo vea. --}}
                     <div x-data="{ show: true }" x-init="setTimeout(() => show = false, 12000)" x-show="show" x-transition.opacity
                         @class([

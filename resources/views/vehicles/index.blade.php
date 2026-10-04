@@ -63,7 +63,9 @@
                     </thead>
                     <tbody>
                         @forelse ($vehicles as $vehicle)
-                            @php($profile = $vehicle->images->firstWhere('profile', true))
+                            @php
+                                $profile = $vehicle->images->firstWhere('profile', true);
+                            @endphp
                             <tr>
                                 <td>
                                     @if ($profile)

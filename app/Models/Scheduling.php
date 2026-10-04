@@ -3,12 +3,132 @@
 namespace App\Models;
 
 use Carbon\CarbonPeriod;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class Scheduling extends Model
 {
+    /** Relaciones que pintan las listas y la ficha (W17, W18). */
+    public const RELATIONS = ['zone', 'route', 'vehicle', 'schedule', 'driver', 'helper'];
+
+    /**
+     * Filtros del listado de W17. Los comparten el API y la vista Blade.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    public function scopeFilter(Builder $query, array $filters): Builder
+    {
+        $today = now()->toDateString();
+
+        return $query
+            ->when(filled($filters['zone_id'] ?? null), fn ($q) => $q->where('zone_id', (int) $filters['zone_id']))
+            ->when(filled($filters['schedule_id'] ?? null), fn ($q) => $q->where('schedule_id', (int) $filters['schedule_id']))
+            ->when(filled($filters['vehicle_id'] ?? null), fn ($q) => $q->where('vehicle_id', (int) $filters['vehicle_id']))
+            ->when(filled($filters['status'] ?? null), fn ($q) => $q->where('status', (string) $filters['status']))
+            // "Vigentes hoy": las que cubren la fecha actual.
+            ->when(filter_var($filters['current'] ?? false, FILTER_VALIDATE_BOOLEAN), fn ($q) => $q
+                ->where('start_date', '<=', $today)
+                ->where('end_date', '>=', $today))
+            // W17 filtra por fecha ("24/08/2026"): solo las vigentes ese día.
+            ->when(filled($filters['date'] ?? null), fn ($q) => $q
+                ->whereDate('start_date', '<=', $filters['date'])
+                ->whereDate('end_date', '>=', $filters['date']));
+    }
+
+    /**
+     * Cuelga de cada programación el estado de su recorrido en esa fecha y el
+     * aviso de vacaciones sobrevenidas, que es lo que W17 pinta bajo la tabla.
+     *
+     * La columna ESTADO de W17 no es el estado de la programación
+     * (activa/inactiva) sino el del recorrido del día consultado, que vive en
+     * otra tabla. Se resuelve en una consulta para toda la página.
+     *
+     * @param  Collection<int, self>  $schedulings
+     */
+    public static function attachDayStatus(Collection $schedulings, string $date): void
+    {
+        $routes = VehicleRoute::query()
+            ->whereIn('scheduling_id', $schedulings->pluck('id'))
+            ->whereDate('date_route', $date)
+            ->get()
+            ->keyBy('scheduling_id');
+
+        $weekday = (int) date('N', strtotime($date));
+
+        foreach ($schedulings as $scheduling) {
+            $route = $routes->get($scheduling->id);
+
+            $scheduling->day_route_id = $route?->id;
+            // Sin recorrido ese día puede ser que ese día no toque (no está en
+            // weekdays) o que sea pasado: no es lo mismo y la fila lo dice.
+            $scheduling->day_status = $route?->status
+                ?? (in_array($weekday, array_map('intval', $scheduling->weekdays ?? []), true)
+                    ? 'sin_recorrido'
+                    : 'no_aplica');
+            $scheduling->day_block_reason = $route?->block_reason;
+            $scheduling->vacation_conflicts = $scheduling->vacationConflicts($date);
+        }
+    }
+
+    /**
+     * Contadores de la barra superior de W17.
+     *
+     * @return array{total: int, activas: int, vigentes: int, inactivas: int}
+     */
+    public static function summary(): array
+    {
+        $today = now()->toDateString();
+
+        return [
+            'total' => static::count(),
+            'activas' => static::where('status', 'activa')->count(),
+            'vigentes' => static::where('status', 'activa')
+                ->where('start_date', '<=', $today)
+                ->where('end_date', '>=', $today)
+                ->count(),
+            'inactivas' => static::where('status', 'inactiva')->count(),
+        ];
+    }
+
+    /**
+     * Guarda la regla maestra y regenera los recorridos de cada día en la
+     * misma transacción: una programación sin sus recorridos no existe para
+     * el calendario (W20) ni para el inicio de recorrido (W21).
+     *
+     * @param  array<string, mixed>  $data  Lo validado por SchedulingRules.
+     */
+    public function saveAndSync(array $data): self
+    {
+        DB::transaction(function () use ($data) {
+            $this->fill($data)->save();
+            $this->syncVehicleRoutes();
+        });
+
+        return $this;
+    }
+
+    /**
+     * Por qué no se puede eliminar, o null si se puede. Si algún recorrido ya
+     * arrancó, la programación es historia: se desactiva, no se borra, para
+     * que W20 siga explicando lo que pasó.
+     */
+    public function deletionBlocker(): ?string
+    {
+        $started = $this->vehicleRoutes()->where('status', '!=', 'programado')->count();
+
+        return $started > 0
+            ? sprintf(
+                'No se puede eliminar: la programación ya tiene %d %s. Cámbiala a inactiva.',
+                $started,
+                $started === 1 ? 'recorrido iniciado' : 'recorridos iniciados',
+            )
+            : null;
+    }
+
     /** Etiquetas ISO-8601: 1 es lunes, 7 domingo. */
     public const WEEKDAY_LABELS = [
         1 => 'Lun', 2 => 'Mar', 3 => 'Mié', 4 => 'Jue', 5 => 'Vie', 6 => 'Sáb', 7 => 'Dom',

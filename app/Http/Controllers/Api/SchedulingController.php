@@ -7,13 +7,11 @@ use App\Http\Requests\SchedulingRequest;
 use App\Http\Resources\SchedulingResource;
 use App\Models\Scheduling;
 use App\Models\User;
-use App\Models\VehicleRoute;
 use App\Models\Zone;
 use App\Services\Scheduling\SchedulingRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
@@ -25,83 +23,30 @@ use Illuminate\Validation\Rule;
  */
 class SchedulingController extends Controller
 {
-    private const RELATIONS = ['zone', 'route', 'vehicle', 'schedule', 'driver', 'helper'];
+    private const RELATIONS = Scheduling::RELATIONS;
 
     public function index(Request $request): AnonymousResourceCollection
     {
         $schedulings = Scheduling::query()
             ->with(self::RELATIONS)
             ->withCount('vehicleRoutes')
-            ->when($request->filled('zone_id'), fn ($q) => $q->where('zone_id', $request->integer('zone_id')))
-            ->when($request->filled('schedule_id'), fn ($q) => $q->where('schedule_id', $request->integer('schedule_id')))
-            ->when($request->filled('vehicle_id'), fn ($q) => $q->where('vehicle_id', $request->integer('vehicle_id')))
-            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')->toString()))
-            // "Vigentes hoy": las que cubren la fecha actual. Es el filtro que
-            // W17 trae marcado al entrar.
-            ->when($request->boolean('current'), fn ($q) => $q
-                ->where('start_date', '<=', now()->toDateString())
-                ->where('end_date', '>=', now()->toDateString()))
-            // W17 filtra por fecha ("24/08/2026"): solo las vigentes ese día.
-            ->when($request->filled('date'), fn ($q) => $q
-                ->whereDate('start_date', '<=', $request->date('date'))
-                ->whereDate('end_date', '>=', $request->date('date')))
-            ->when($request->boolean('current'), fn ($q) => $q
-                ->where('start_date', '<=', now()->toDateString())
-                ->where('end_date', '>=', now()->toDateString()))
+            ->filter($request->all())
             ->orderByDesc('start_date')
             ->orderBy('id')
             ->paginate($request->integer('per_page', 15))
             ->withQueryString();
 
-        // La columna ESTADO de W17 no es el estado de la programación
-        // (activa/inactiva) sino el del recorrido del día consultado, que vive
-        // en otra tabla. Se resuelve en una consulta para toda la página.
+        // La columna ESTADO de W17 es el estado del recorrido de ese día.
         if ($request->filled('date')) {
-            $this->attachDayStatus($schedulings->getCollection(), $request->date('date')->format('Y-m-d'));
+            Scheduling::attachDayStatus($schedulings->getCollection(), $request->date('date')->format('Y-m-d'));
         }
 
         return SchedulingResource::collection($schedulings);
     }
 
-    /**
-     * Cuelga de cada programacion el estado de su recorrido en esa fecha y el
-     * aviso de vacaciones sobrevenidas, que es lo que W17 pinta bajo la tabla.
-     *
-     * @param  \Illuminate\Support\Collection<int, Scheduling>  $schedulings
-     */
-    private function attachDayStatus($schedulings, string $date): void
-    {
-        $routes = \App\Models\VehicleRoute::query()
-            ->whereIn('scheduling_id', $schedulings->pluck('id'))
-            ->whereDate('date_route', $date)
-            ->get()
-            ->keyBy('scheduling_id');
-
-        $weekday = (int) date('N', strtotime($date));
-
-        foreach ($schedulings as $scheduling) {
-            $route = $routes->get($scheduling->id);
-
-            $scheduling->day_route_id = $route?->id;
-            // Sin recorrido ese día puede ser que ese día no toque (no está en
-            // weekdays) o que sea pasado: no es lo mismo y la fila lo dice.
-            $scheduling->day_status = $route?->status
-                ?? (in_array($weekday, array_map('intval', $scheduling->weekdays ?? []), true)
-                    ? 'sin_recorrido'
-                    : 'no_aplica');
-            $scheduling->day_block_reason = $route?->block_reason;
-            $scheduling->vacation_conflicts = $scheduling->vacationConflicts($date);
-        }
-    }
-
     public function store(SchedulingRequest $request): JsonResponse
     {
-        $scheduling = DB::transaction(function () use ($request) {
-            $scheduling = Scheduling::create($request->validated());
-            $scheduling->syncVehicleRoutes();
-
-            return $scheduling;
-        });
+        $scheduling = (new Scheduling)->saveAndSync($request->validated());
 
         return (new SchedulingResource($scheduling->load(self::RELATIONS)->loadCount('vehicleRoutes')))
             ->response()
@@ -117,28 +62,15 @@ class SchedulingController extends Controller
 
     public function update(SchedulingRequest $request, Scheduling $scheduling): SchedulingResource
     {
-        DB::transaction(function () use ($request, $scheduling) {
-            $scheduling->update($request->validated());
-            $scheduling->syncVehicleRoutes();
-        });
+        $scheduling->saveAndSync($request->validated());
 
         return new SchedulingResource($scheduling->load(self::RELATIONS)->loadCount('vehicleRoutes'));
     }
 
     public function destroy(Scheduling $scheduling): JsonResponse
     {
-        // Si algun recorrido ya arranco, la programacion es historia: se
-        // desactiva, no se borra. Asi W20 sigue explicando lo que pasó.
-        $started = $scheduling->vehicleRoutes()->where('status', '!=', 'programado')->count();
-
-        if ($started > 0) {
-            return response()->json([
-                'message' => sprintf(
-                    'No se puede eliminar: la programación ya tiene %s %s. Cámbiala a inactiva.',
-                    $this->plural($started, 'recorrido', 'recorridos'),
-                    $started === 1 ? 'iniciado' : 'iniciados',
-                ),
-            ], 409);
+        if ($blocker = $scheduling->deletionBlocker()) {
+            return response()->json(['message' => $blocker], 409);
         }
 
         $scheduling->delete();
@@ -253,10 +185,7 @@ class SchedulingController extends Controller
             }
 
             if (! $simulacion) {
-                DB::transaction(function () use ($scheduling, $payload) {
-                    $scheduling->update($payload);
-                    $scheduling->syncVehicleRoutes();
-                });
+                $scheduling->saveAndSync($payload);
             }
 
             $aplicadas[] = ['id' => $scheduling->id, 'code' => $scheduling->code];
@@ -302,17 +231,7 @@ class SchedulingController extends Controller
     /** Contadores de la barra superior de W17. */
     public function summary(): JsonResponse
     {
-        $today = now()->toDateString();
-
-        return response()->json([
-            'total' => Scheduling::count(),
-            'activas' => Scheduling::where('status', 'activa')->count(),
-            'vigentes' => Scheduling::where('status', 'activa')
-                ->where('start_date', '<=', $today)
-                ->where('end_date', '>=', $today)
-                ->count(),
-            'inactivas' => Scheduling::where('status', 'inactiva')->count(),
-        ]);
+        return response()->json(Scheduling::summary());
     }
 
     /**

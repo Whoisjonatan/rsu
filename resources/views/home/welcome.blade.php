@@ -67,7 +67,9 @@
             <x-card-header title="Accesos rápidos" description="Las tareas más frecuentes, a un clic." />
             <div class="grid gap-3 p-4 sm:grid-cols-2">
                 @foreach ($shortcuts as $shortcut)
-                    @php([$to, $label, $description, $icon] = $shortcut)
+                    @php
+                        [$to, $label, $description, $icon] = $shortcut;
+                    @endphp
                     <a href="{{ url($to) }}" @if ($shortcut[4] ?? false) target="_blank" rel="noreferrer" @endif
                         class="group flex items-start gap-3 rounded-lg border border-stone-200 p-3.5 transition hover:border-brand-300 hover:bg-brand-50/60">
                         <span
