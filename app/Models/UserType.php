@@ -24,4 +24,18 @@ class UserType extends Model
     {
         return $this->hasMany(User::class, 'usertype_id');
     }
+
+    /** Por qué no se puede eliminar, o null si se puede. */
+    public function deletionBlocker(): ?string
+    {
+        if ($this->is_system) {
+            return "La función \"{$this->name}\" es predefinida y no se puede eliminar.";
+        }
+
+        if ($this->users()->exists()) {
+            return 'No se puede eliminar: hay personal con esta función.';
+        }
+
+        return null;
+    }
 }

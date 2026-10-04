@@ -65,4 +65,21 @@ class Vacation extends Model
     {
         return max(0, self::MAX_DAYS_PER_YEAR - static::usedDays($userId, $year, $ignoreId));
     }
+
+    /**
+     * Los indicadores de W10 para un período.
+     *
+     * @return array{year: int, max_days: int, scheduled_days: int, pending_days: int, eligible: bool}
+     */
+    public static function summaryFor(User $person, int $year): array
+    {
+        return [
+            'year' => $year,
+            'max_days' => self::MAX_DAYS_PER_YEAR,
+            'scheduled_days' => static::usedDays($person->id, $year),
+            'pending_days' => static::pendingDays($person->id, $year),
+            // Si no tiene contrato que dé derecho, W10 no deja registrar.
+            'eligible' => $person->isVacationEligible(),
+        ];
+    }
 }
