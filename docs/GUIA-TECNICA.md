@@ -1,7 +1,7 @@
 # Guía técnica
 
 Cómo arrancar el proyecto, dónde está cada cosa, por qué está hecha así y con qué trampas
-ya tropezamos. **Las 21 pantallas del informe están implementadas**; lo que queda son
+ya tropezamos. **Las pantallas del informe están implementadas** (el panel W02 se retiró a propósito); lo que queda son
 mejoras, y viven en la última sección.
 
 El detalle cronológico está en [`BITACORA.md`](BITACORA.md); la visión general del proyecto,
@@ -57,7 +57,7 @@ personas). Si se añade un seeder nuevo, respetar esa cadena.
 | Módulo | Pantallas | Estado |
 |--------|-----------|--------|
 | Acceso | W01 | ✅ |
-| Panel principal | W02 | ✅ |
+| Panel principal | W02 | Retirado (4/10/2026): repetía lo que muestra Inicio |
 | Vehículos | W03, W04, W05 | ✅ |
 | Personal | W06–W10 | ✅ |
 | Asistencias | W11, W12 | ✅ |
@@ -67,7 +67,7 @@ personas). Si se añade un seeder nuevo, respetar esa cadena.
 | Turnos | W16 | ✅ |
 | **Programación** | **W17–W21** | ✅ |
 
-**Las 21 pantallas del informe están implementadas.** Lo que queda son mejoras, en la
+**Las pantallas del informe están implementadas**, salvo W02, que se retiró a propósito. Lo que queda son mejoras, en la
 sección 10.
 
 Números actuales: 25 departamentos · 3 provincias · 38 distritos (Lambayeque completo) ·
@@ -287,7 +287,6 @@ Además `POST .../block` (con motivo) y `POST .../finish` para cerrar el ciclo d
 | **W19** Edición masiva | Marca **qué campos** cambiar y los aplica a varias. Avisa antes de aplicar qué filas se rechazarían. | `POST /schedulings/bulk-update` (+ `dry_run`) |
 | **W20** Calendario | Semana de lunes a domingo, con navegación y el badge **Vacaciones** derivado. | `GET /vehicleroutes?from=&to=` |
 | **W21** Iniciar | Modal con verificaciones, reemplazo por reserva y "posponer". | `GET /vehicleroutes/{id}` |
-| **W02** Panel | Contadores del día y **personal ausente / asignado**. | `GET /vehicleroutes/summary?date=` |
 
 Dos detalles que no se ven en la tabla:
 
@@ -548,7 +547,7 @@ Si se toca un controlador del API, probarlo también con token (como la app móv
 
 ## 10. Mejoras pendientes
 
-No son huecos: las 21 pantallas del informe están implementadas. Es lo que haría mejor al
+No son huecos: las pantallas del informe están implementadas. Es lo que haría mejor al
 sistema si hay tiempo, en orden de valor.
 
 ### 1. Días hábiles reales en el reporte de asistencias

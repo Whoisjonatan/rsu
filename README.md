@@ -8,7 +8,7 @@ móvil. No hay un front aparte que levantar.
 
 ```
 C:\laragon\www\rsu-back     Laravel 12 + Eloquent + Blade + Alpine.js + Tailwind 4
-  ├── resources/views/       El panel web (las 21 pantallas del informe)
+  ├── resources/views/       El panel web
   ├── routes/web.php         Pantallas, con sesión por cookie
   └── routes/api.php         API REST para la app móvil, con token Bearer de Sanctum
 ```
@@ -49,11 +49,11 @@ un equipo compartido en el punto de fichaje. El trabajador se identifica con su 
 
 ## Estado
 
-Las **21 pantallas** del informe están implementadas en Blade (W01–W21).
+Las pantallas del informe están implementadas en Blade (W01, W03–W21). El panel principal (W02) se retiró el 4/10/2026 por decisión del equipo: repetía lo que ya muestra Inicio.
 
 | Módulo | Pantallas |
 |--------|-----------|
-| Acceso y panel | W01, W02 |
+| Acceso | W01 · Inicio |
 | Vehículos | W03 catálogos · W04 listado · W05 ficha con imágenes |
 | Personal | W06 funciones · W07 listado · W08 ficha · W09 contratos · W10 vacaciones |
 | Asistencias | W11 terminal de marcación · W12 reporte (con exportación CSV) |

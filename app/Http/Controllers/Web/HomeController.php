@@ -23,20 +23,4 @@ class HomeController extends Controller
             'routes' => VehicleRoute::daySummary($today),
         ]);
     }
-
-    /** W02 Panel principal. */
-    public function dashboard(): View
-    {
-        $today = now()->toDateString();
-
-        return view('home.dashboard', [
-            'vehicles' => Vehicle::summary(),
-            'summary' => VehicleRoute::daySummary($today),
-            'routes' => VehicleRoute::query()
-                ->with(['vehicle', 'schedule', 'scheduling.zone'])
-                ->onDate($today)
-                ->orderBy('schedule_id')
-                ->get(),
-        ]);
-    }
 }

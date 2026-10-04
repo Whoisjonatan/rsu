@@ -5,13 +5,12 @@
 
 @php
     /*
-     * Navegación lateral: la bienvenida y los accesos del wireframe W02,
-     * agrupados por módulo. El primer grupo va sin título (Inicio y Dashboard).
+     * Navegación lateral: la bienvenida y los módulos, agrupados. El primer
+     * grupo va sin título.
      */
     $navGroups = [
         [null, [
             ['/inicio', 'Inicio', 'house'],
-            ['/', 'Dashboard', 'layout-dashboard'],
         ]],
         ['Gestión vehicular', [
             ['/vehiculos', 'Vehículos', 'truck'],

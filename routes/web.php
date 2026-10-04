@@ -41,7 +41,8 @@ Route::post('marcacion', [AttendanceController::class, 'mark'])
 Route::middleware('auth')->group(function () {
     Route::post('logout', [AuthController::class, 'destroy'])->name('logout');
 
-    Route::get('/', [HomeController::class, 'dashboard'])->name('dashboard');
+    // El panel (W02) se retiró: la raíz lleva a Inicio.
+    Route::redirect('/', '/inicio');
     Route::get('inicio', [HomeController::class, 'welcome'])->name('welcome');
 
     // Catálogos de vehículos (W03): cuatro pestañas en una sola pantalla.

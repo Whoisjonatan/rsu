@@ -41,11 +41,6 @@
                     Bienvenido al sistema de Gestión de Residuos Sólidos. Desde aquí se administra la flota, el
                     personal, las zonas de recolección y la programación diaria de los recorridos.
                 </p>
-                <a href="{{ route('dashboard') }}"
-                    class="mt-4 inline-flex items-center gap-1.5 rounded-md bg-cream-100 px-3.5 py-2 text-[12px] font-semibold text-brand-700 shadow-sm transition hover:bg-cream-50">
-                    Ir al dashboard
-                    <x-lucide-arrow-right class="size-3.5" />
-                </a>
             </div>
 
             <span class="hidden shrink-0 place-items-center rounded-xl bg-cream-100 px-4 py-3 shadow-sm sm:grid">
