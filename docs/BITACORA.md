@@ -10,8 +10,8 @@ Registro de lo trabajado por sesión, para retomar desde aquí.
 reescribió como vistas Blade dentro de `rsu-back`. Se consideró meter el React dentro de
 Laravel tal cual (una tarde de trabajo, sin reescribir), pero se eligió Blade.
 
-La carpeta `rsu-front` se borró del disco. El código React sigue en GitHub
-(`github.com/zJona13/rsu-front`, rama `main`, último commit `85a7965`) por si hay que consultarlo.
+La carpeta `rsu-front` y su repositorio en GitHub se eliminaron: el proyecto entero es
+`rsu-back`.
 
 ## Cómo quedó
 
