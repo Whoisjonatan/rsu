@@ -90,6 +90,8 @@
                                 <th class="text-right!">Modelos</th>
                             @endif
                             <th class="text-right!">Vehículos</th>
+                            <th>Fecha de creación</th>
+                            <th>Fecha de modificación</th>
                             <th class="w-24"></th>
                         </tr>
                     </thead>
@@ -133,6 +135,8 @@
                                     <td class="text-right tabular-nums">{{ $row->models_count }}</td>
                                 @endif
                                 <td class="text-right tabular-nums">{{ $row->vehicles_count }}</td>
+                                <td><x-datetime :value="$row->created_at" /></td>
+                                <td><x-datetime :value="$row->updated_at" /></td>
                                 <td>
                                     <x-row-actions :label="$row->name" :row="match ($tab) {
                                         'colores' => $row->only('id', 'name', 'description', 'hex'),
@@ -143,7 +147,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <x-empty-row :colspan="$tab === 'tipos' ? 4 : 5"
+                            <x-empty-row :colspan="$tab === 'tipos' ? 6 : 7"
                                 :message="$search !== '' ? 'No hay coincidencias' : 'No hay registros'" />
                         @endforelse
                     </tbody>

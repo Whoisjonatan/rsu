@@ -161,8 +161,9 @@ class SchedulingController extends Controller
      */
     private function formData(?Scheduling $current = null): array
     {
-        $staff = fn (string $slug) => User::ofFunction($slug)
-            ->when($current, fn ($q) => $q->orWhereKey([$current->driver_id, $current->helper_id]))
+        // Al editar, cada combo conserva a su titular aunque ya no tenga esa función.
+        $staff = fn (string $slug, ?int $keep) => User::query()
+            ->where(fn ($q) => $q->ofFunction($slug)->when($keep, fn ($q) => $q->orWhere('id', $keep)))
             ->orderBy('lastname')
             ->orderBy('name')
             ->get(['id', 'name', 'lastname', 'dni']);
@@ -180,11 +181,11 @@ class SchedulingController extends Controller
             // Solo los operativos; al editar se mantiene el asignado aunque ya
             // no lo esté, para que el combo no lo pierda.
             'vehicles' => Vehicle::with(['brand', 'model'])
-                ->where(fn ($q) => $q->operational()->when($current, fn ($q) => $q->orWhereKey($current->vehicle_id)))
+                ->where(fn ($q) => $q->operational()->when($current, fn ($q) => $q->orWhere('id', $current->vehicle_id)))
                 ->orderBy('code')
                 ->get(),
-            'drivers' => $staff(UserType::DRIVER),
-            'helpers' => $staff(UserType::HELPER),
+            'drivers' => $staff(UserType::DRIVER, $current?->driver_id),
+            'helpers' => $staff(UserType::HELPER, $current?->helper_id),
         ];
     }
 }

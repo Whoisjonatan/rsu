@@ -62,7 +62,7 @@ class VehicleController extends Controller
     {
         return view('vehicles.form', [
             'vehicle' => $vehicle->load(['images' => fn ($q) => $q->orderBy('id')]),
-            ...$this->catalogs(),
+            ...$this->catalogs($vehicle),
         ]);
     }
 
@@ -88,14 +88,26 @@ class VehicleController extends Controller
      * Los combos de la ficha. Los modelos van todos con su marca: el
      * formulario filtra los de la marca elegida sin volver al servidor.
      *
+     * Solo se ofrecen marcas con algún modelo: sin modelo no se puede
+     * registrar el vehículo, así que elegirlas no lleva a ninguna parte. Al
+     * editar se conserva la marca del vehículo pase lo que pase, para que el
+     * combo no pierda su valor.
+     *
      * @return array<string, mixed>
      */
-    private function catalogs(): array
+    private function catalogs(?Vehicle $current = null): array
     {
+        $types = VehicleType::orderBy('name')->get(['id', 'name']);
+
         return [
-            'brands' => Brand::orderBy('name')->get(['id', 'name']),
+            'brands' => Brand::query()
+                ->where(fn ($q) => $q->has('models')->when($current, fn ($q) => $q->orWhere('id', $current->brand_id)))
+                ->orderBy('name')
+                ->get(['id', 'name']),
             'models' => BrandModel::orderBy('name')->get(['id', 'name', 'brand_id']),
-            'types' => VehicleType::orderBy('name')->get(['id', 'name']),
+            'types' => $types,
+            // Los tipos que habilitan la capacidad de compactación.
+            'compactorTypeIds' => $types->filter->isCompactor()->pluck('id')->map(fn ($id) => (string) $id)->values(),
             'colors' => VehicleColor::orderBy('name')->get(['id', 'name', 'red', 'green', 'blue']),
         ];
     }

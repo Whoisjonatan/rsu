@@ -58,6 +58,8 @@
                             <th class="text-right">Año</th>
                             <th class="text-right">Capacidad</th>
                             <th>Estado</th>
+                            <th>Fecha de creación</th>
+                            <th>Fecha de modificación</th>
                             <th class="text-right">Acciones</th>
                         </tr>
                     </thead>
@@ -100,6 +102,8 @@
                                         {{ Status::label('vehicle', $vehicle->status) }}
                                     </x-badge>
                                 </td>
+                                <td><x-datetime :value="$vehicle->created_at" /></td>
+                                <td><x-datetime :value="$vehicle->updated_at" /></td>
                                 <td>
                                     <div class="flex justify-end gap-1">
                                         <button type="button" class="icon-btn" title="Ver imágenes"
@@ -124,7 +128,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <x-empty-row colspan="9" message="No hay vehículos que coincidan con los filtros" />
+                            <x-empty-row colspan="11" message="No hay vehículos que coincidan con los filtros" />
                         @endforelse
                     </tbody>
                 </table>

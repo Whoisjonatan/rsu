@@ -24,12 +24,19 @@
                 brandId: @js((string) $value('brand_id')),
                 modelId: @js((string) $value('model_id')),
                 models: @js($models),
+                typeId: @js((string) $value('type_id')),
+                compactorTypeIds: @js($compactorTypeIds),
                 get brandModels() { return this.models.filter((model) => String(model.brand_id) === this.brandId) },
+                get isCompactor() { return this.compactorTypeIds.includes(this.typeId) },
             }"
-            x-init="$watch('brandId', () => {
-                // Si la marca cambia, el modelo elegido deja de pertenecerle: se limpia.
-                if (!brandModels.some((model) => String(model.id) === modelId)) modelId = ''
-            })"
+            x-init="
+                $watch('brandId', () => {
+                    // Si la marca cambia, el modelo elegido deja de pertenecerle: se limpia.
+                    if (!brandModels.some((model) => String(model.id) === modelId)) modelId = ''
+                })
+                // Fuera de un compactador la capacidad de compactación no aplica: se vacía.
+                $watch('isCompactor', (value) => { if (!value) $refs.compaction.value = '' })
+            "
             @submit="sending = true">
             @csrf
             @if ($editing)
@@ -82,10 +89,10 @@
                     </x-field>
 
                     <x-field label="Tipo" name="type_id" required>
-                        <select id="type_id" name="type_id" class="{{ $fieldClass('type_id') }}" required>
+                        <select id="type_id" name="type_id" x-model="typeId" class="{{ $fieldClass('type_id') }}" required>
                             <option value="">Selecciona un tipo</option>
                             @foreach ($types as $type)
-                                <option value="{{ $type->id }}" @selected($value('type_id') == $type->id)>{{ $type->name }}</option>
+                                <option value="{{ $type->id }}">{{ $type->name }}</option>
                             @endforeach
                         </select>
                     </x-field>
@@ -121,9 +128,15 @@
                             class="{{ $fieldClass('load_capacity') }}" required>
                     </x-field>
 
-                    <x-field label="Capacidad de compactación (Tn)" name="compaction_capacity" hint="Solo para compactadores">
+                    {{-- Deshabilitado no se envía, y el servidor la descarta igual si el tipo no es compactador. --}}
+                    <x-field label="Capacidad de compactación (Tn)" name="compaction_capacity">
                         <input id="compaction_capacity" name="compaction_capacity" type="number" step="0.01" min="0"
+                            x-ref="compaction" :disabled="!isCompactor"
                             value="{{ $number('compaction_capacity') }}" class="{{ $fieldClass('compaction_capacity') }}">
+                        @unless ($errors->has('compaction_capacity'))
+                            <p class="mt-1.5 text-[11px] text-stone-500"
+                                x-text="isCompactor ? 'Capacidad del compactador' : 'Solo para el tipo Compactador'"></p>
+                        @endunless
                     </x-field>
 
                     <x-field label="Capacidad de combustible (L)" name="fuel_capacity" required>

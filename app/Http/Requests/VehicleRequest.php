@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Vehicle;
+use App\Models\VehicleType;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -72,6 +73,15 @@ class VehicleRequest extends FormRequest
 
         if ($this->has('code')) {
             $this->merge(['code' => strtoupper(trim((string) $this->input('code')))]);
+        }
+
+        // La capacidad de compactación solo se guarda en un compactador: si
+        // el tipo es otro, se descarta lo que venga (el formulario ya la
+        // deshabilita, pero el API también la recibe).
+        $type = VehicleType::find($this->input('type_id'));
+
+        if ($type && ! $type->isCompactor()) {
+            $this->merge(['compaction_capacity' => null]);
         }
     }
 
