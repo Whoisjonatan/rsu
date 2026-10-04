@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 class VehicleRoute extends Model
 {
@@ -178,7 +179,7 @@ class VehicleRoute extends Model
      * activo, con contrato vigente, sin vacaciones, **que si marco asistencia**
      * y que no este ya ocupado en otro recorrido del mismo dia y turno.
      *
-     * @return \Illuminate\Support\Collection<int, User>
+     * @return Collection<int, User>
      */
     public function availableReserves(int $usertypeId)
     {

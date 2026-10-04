@@ -25,7 +25,7 @@ class AppServiceProvider extends ServiceProvider
                     apiKey: config('dni.api_key'),
                     timeout: (int) config('dni.timeout'),
                 ),
-                default => new NullLookup(),
+                default => new NullLookup,
             };
         });
     }

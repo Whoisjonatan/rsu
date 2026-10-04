@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -212,7 +213,7 @@ class User extends Authenticatable
         }
 
         return $this->license_expiration === null
-            || $this->license_expiration >= ($date ? \Carbon\Carbon::parse($date) : now()->startOfDay());
+            || $this->license_expiration >= ($date ? Carbon::parse($date) : now()->startOfDay());
     }
 
     public function isDriver(): bool

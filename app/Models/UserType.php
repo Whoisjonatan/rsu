@@ -11,6 +11,7 @@ class UserType extends Model
 
     /** Funciones que el informe exige preservar. */
     public const DRIVER = 'conductor';
+
     public const HELPER = 'ayudante';
 
     protected $fillable = ['name', 'slug', 'description', 'is_system'];

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\VehicleRouteResource;
+use App\Models\Attendance;
 use App\Models\User;
 use App\Models\VehicleOccupant;
 use App\Models\VehicleRoute;
@@ -163,7 +164,7 @@ class VehicleRouteController extends Controller
 
         // W21 los lista como "Salas Mendoza, Rosa · presente 06:04 a. m.": sin
         // la hora de marcación no se puede elegir con criterio entre dos.
-        $marks = \App\Models\Attendance::query()
+        $marks = Attendance::query()
             ->whereIn('user_id', $reserves->pluck('id'))
             ->whereDate('date', $date)
             ->whereIn('status', ['presente', 'tarde'])

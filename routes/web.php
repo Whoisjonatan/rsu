@@ -111,7 +111,6 @@ Route::middleware('auth')->group(function () {
     Route::get('zonas/{zone}/perimetro', [ZoneController::class, 'perimeter'])->name('zones.perimeter');
     Route::put('zonas/{zone}/perimetro', [ZoneController::class, 'savePerimeter'])->name('zones.perimeter.update');
 
-
     Route::get('rutas', [RouteController::class, 'index'])->name('routes.index');
     Route::post('rutas', [RouteController::class, 'store'])->name('routes.store');
     Route::put('rutas/{route}', [RouteController::class, 'update'])->name('routes.update');

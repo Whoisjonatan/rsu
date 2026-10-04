@@ -29,7 +29,7 @@ Route::name('api.')->group(function () {
         try {
             DB::connection()->getPdo();
             $database = DB::connection()->getDatabaseName();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $database = null;
         }
 
