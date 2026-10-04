@@ -10,6 +10,9 @@ Registro de lo trabajado por sesión, para retomar desde aquí.
 reescribió como vistas Blade dentro de `rsu-back`. Se consideró meter el React dentro de
 Laravel tal cual (una tarde de trabajo, sin reescribir), pero se eligió Blade.
 
+La carpeta `rsu-front` se borró del disco. El código React sigue en GitHub
+(`github.com/zJona13/rsu-front`, rama `main`, último commit `85a7965`) por si hay que consultarlo.
+
 ## Cómo quedó
 
 - **Las 21 pantallas en Blade**, con las mismas URL (`/vehiculos`, `/personal/2?tab=contratos`,
