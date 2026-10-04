@@ -21,4 +21,12 @@ class BrandModel extends Model
     {
         return $this->hasMany(Vehicle::class, 'model_id');
     }
+
+    /** Por qué no se puede eliminar, o null si se puede. */
+    public function deletionBlocker(): ?string
+    {
+        return $this->vehicles()->exists()
+            ? 'No se puede eliminar: hay vehículos con este modelo.'
+            : null;
+    }
 }

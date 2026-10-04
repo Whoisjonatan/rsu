@@ -49,8 +49,6 @@ Route::middleware('auth')->group(function () {
         Route::post('marcas', [BrandController::class, 'store'])->name('brands.store');
         Route::put('marcas/{brand}', [BrandController::class, 'update'])->name('brands.update');
         Route::delete('marcas/{brand}', [BrandController::class, 'destroy'])->name('brands.destroy');
-        Route::post('marcas/{brand}/logo', [BrandController::class, 'uploadLogo'])->name('brands.logo.store');
-        Route::delete('marcas/{brand}/logo', [BrandController::class, 'deleteLogo'])->name('brands.logo.destroy');
 
         Route::post('modelos', [BrandModelController::class, 'store'])->name('brandmodels.store');
         Route::put('modelos/{brandmodel}', [BrandModelController::class, 'update'])->name('brandmodels.update');

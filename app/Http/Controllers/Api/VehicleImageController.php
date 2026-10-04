@@ -8,8 +8,6 @@ use App\Models\Vehicle;
 use App\Models\VehicleImage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Carga de imagenes del vehiculo: subir, marcar como perfil y eliminar.
@@ -33,10 +31,7 @@ class VehicleImageController extends Controller
     {
         abort_if($image->vehicle_id !== $vehicle->id, 404);
 
-        DB::transaction(function () use ($vehicle, $image) {
-            $vehicle->images()->update(['profile' => false]);
-            $image->update(['profile' => true]);
-        });
+        $image->makeProfile();
 
         return response()->json(new VehicleImageResource($image->fresh()));
     }
@@ -45,14 +40,7 @@ class VehicleImageController extends Controller
     {
         abort_if($image->vehicle_id !== $vehicle->id, 404);
 
-        Storage::disk('public')->delete($image->image);
-        $wasProfile = $image->profile;
-        $image->delete();
-
-        // Si se borro la de perfil, promover la siguiente imagen disponible.
-        if ($wasProfile) {
-            $vehicle->images()->oldest('id')->first()?->update(['profile' => true]);
-        }
+        $image->deleteAndPromote();
 
         return response()->json(null, 204);
     }

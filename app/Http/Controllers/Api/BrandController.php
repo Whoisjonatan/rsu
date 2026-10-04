@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\BrandRequest;
 use App\Models\Brand;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\Rule;
 
 class BrandController extends Controller
 {
@@ -18,31 +17,25 @@ class BrandController extends Controller
         );
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(BrandRequest $request): JsonResponse
     {
-        return response()->json(Brand::create($this->validated($request)), 201);
+        return response()->json(Brand::create($request->brandData()), 201);
     }
 
-    public function update(Request $request, Brand $brand): JsonResponse
+    public function update(BrandRequest $request, Brand $brand): JsonResponse
     {
-        $brand->update($this->validated($request, $brand->id));
+        $brand->update($request->brandData());
 
         return response()->json($brand);
     }
 
     public function destroy(Brand $brand): JsonResponse
     {
-        if ($brand->vehicles()->exists()) {
-            return response()->json([
-                'message' => 'No se puede eliminar: hay vehiculos con esta marca.',
-            ], 409);
+        if ($blocker = $brand->deletionBlocker()) {
+            return response()->json(['message' => $blocker], 409);
         }
 
-        if ($brand->logo) {
-            Storage::disk('public')->delete($brand->logo);
-        }
-
-        $brand->delete();
+        $brand->deleteWithLogo();
 
         return response()->json(null, 204);
     }
@@ -50,37 +43,17 @@ class BrandController extends Controller
     /** Logo de la marca (W03): subir, reemplazando el anterior, y eliminar. */
     public function uploadLogo(Request $request, Brand $brand): JsonResponse
     {
-        $request->validate([
-            'logo' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
-        ]);
+        $request->validate(['logo' => ['required', ...BrandRequest::logoRules()]]);
 
-        if ($brand->logo) {
-            Storage::disk('public')->delete($brand->logo);
-        }
-
-        $brand->update(['logo' => $request->file('logo')->store('brands', 'public')]);
+        $brand->replaceLogo($request->file('logo'));
 
         return response()->json($brand->fresh());
     }
 
     public function deleteLogo(Brand $brand): JsonResponse
     {
-        if ($brand->logo) {
-            Storage::disk('public')->delete($brand->logo);
-            $brand->update(['logo' => null]);
-        }
+        $brand->replaceLogo(null);
 
         return response()->json($brand->fresh());
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function validated(Request $request, ?int $id = null): array
-    {
-        return $request->validate([
-            'name' => ['required', 'string', 'max:100', Rule::unique('brands', 'name')->ignore($id)],
-            'description' => ['nullable', 'string', 'max:255'],
-        ]);
     }
 }

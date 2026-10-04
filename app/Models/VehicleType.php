@@ -15,4 +15,12 @@ class VehicleType extends Model
     {
         return $this->hasMany(Vehicle::class, 'type_id');
     }
+
+    /** Por qué no se puede eliminar, o null si se puede. */
+    public function deletionBlocker(): ?string
+    {
+        return $this->vehicles()->exists()
+            ? 'No se puede eliminar: hay vehículos de este tipo.'
+            : null;
+    }
 }
