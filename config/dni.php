@@ -2,27 +2,6 @@
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | Consulta de DNI
-    |--------------------------------------------------------------------------
-    |
-    | RENIEC no expone una API publica: su servicio oficial exige convenio
-    | institucional. Lo que hay son intermediarios, y varios ya retiraron la
-    | consulta abierta por proteccion de datos (Ley 29733).
-    |
-    | El proveedor contratado es Consultas API (el mismo de Crinver), driver
-    | "consultasapi".
-    |
-    | Por eso esto es un enriquecimiento OPCIONAL: con driver "null" el sistema
-    | funciona igual y el boton ni siquiera aparece en la ficha de personal.
-    | Si el proveedor entra en mantenimiento basta con poner "null" aqui: el
-    | alta sigue completa escribiendo los diez campos a mano, como siempre.
-    |
-    | Drivers: null | consultasapi
-    |
-    */
-
     'driver' => env('DNI_LOOKUP_DRIVER', 'null'),
 
     'token' => env('DNI_LOOKUP_TOKEN'),

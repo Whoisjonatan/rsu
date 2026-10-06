@@ -91,12 +91,6 @@ del API (`app/Http/Controllers/Api`).
   (`rsu-back.test`, `localhost:8000`…). Si se sirve desde otro dominio, añadirlo aquí.
 - `SESSION_DOMAIN=null` — así la cookie vale tanto en `rsu-back.test` como en `localhost`.
 
-### Consulta de DNI (opcional)
-
-La ficha de personal puede prellenar apellidos y nombres desde el DNI. **RENIEC no tiene API
-pública**, así que se usa un intermediario: **Consultas API**, el servicio contratado que
-también usa Crinver. Con `null` el botón no aparece y todo se llena a mano.
-
 ```
 DNI_LOOKUP_DRIVER=consultasapi   # consultasapi | null (desactivado)
 DNI_LOOKUP_TOKEN=

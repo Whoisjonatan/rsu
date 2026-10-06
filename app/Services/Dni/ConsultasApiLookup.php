@@ -6,24 +6,6 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-/**
- * Consultas API (consultasapi.devmiguelrevilla.com), el servicio contratado
- * que ya se usa en Crinver. Es el unico proveedor del sistema.
- *
- * GET /api/test/{documento}/{token}  con  header  x-api-key: <key>
- *
- * Respuesta 200:
- *   { "document": "76091348", "name": "LEVI JONATAN",
- *     "last_name": "CHING AYACILA", "razon_social": null, "direccion": null, ... }
- *
- * Los campos razon_social / estado / condicion / direccion solo vienen con RUC;
- * aqui no se usan porque la ficha de personal es de personas naturales.
- *
- * Ojo: un DNI que no existe responde 200 con "name" vacio, no 404.
- *
- * Todo fallo se traduce a un mensaje que invita a escribir los datos a mano:
- * si el proveedor esta caido, el alta debe poder completarse igual.
- */
 class ConsultasApiLookup implements DniLookup
 {
     private const BASE = 'http://www.consultasapi.devmiguelrevilla.com/api/test';
