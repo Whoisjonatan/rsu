@@ -9,6 +9,7 @@ use App\Models\UserType;
 use App\Models\Vacation;
 use App\Models\Zone;
 use App\Services\Dni\DniLookup;
+use App\Support\ListUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -18,6 +19,8 @@ class PersonController extends Controller
     /** W07 Listado de personal. */
     public function index(Request $request): View
     {
+        ListUrl::remember('people.index');
+
         $filters = $request->only(['q', 'usertype_id', 'contract_type', 'state']);
 
         $people = User::query()
@@ -25,7 +28,7 @@ class PersonController extends Controller
             ->filter(['search' => $filters['q'] ?? null, ...$filters])
             ->orderBy('lastname')
             ->orderBy('name')
-            ->paginate(15)
+            ->paginate(10)
             ->withQueryString();
 
         return view('people.index', [
@@ -46,7 +49,11 @@ class PersonController extends Controller
     {
         $person = User::create($request->personData());
 
-        // Tras el alta se queda en la ficha, para poder cargar foto y contratos.
+        if ($request->hasFile('photo')) {
+            $person->replacePhoto($request->file('photo'));
+        }
+
+        // Tras el alta se queda en la ficha, para registrar su contrato.
         return redirect()
             ->route('people.edit', [$person, 'tab' => 'contratos'])
             ->with('success', "{$person->full_name} registrado. Ahora registra su contrato.");
@@ -72,7 +79,7 @@ class PersonController extends Controller
     {
         $person->update($request->personData());
 
-        return redirect()->route('people.index')->with('success', "Ficha de {$person->full_name} actualizada.");
+        return redirect()->to(ListUrl::get('people.index'))->with('success', "Ficha de {$person->full_name} actualizada.");
     }
 
     public function destroy(Request $request, User $person): RedirectResponse

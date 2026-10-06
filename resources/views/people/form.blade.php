@@ -6,7 +6,7 @@
 <x-layouts.app :title="$person ? $person->full_name : 'Registrar personal'"
     :subtitle="$person ? 'Personal › Ficha · DNI '.$person->dni : 'Personal › Registrar una persona'">
     <x-slot:actions>
-        <a href="{{ route('people.index') }}" class="btn btn-secondary">
+        <a href="{{ ListUrl::get('people.index') }}" class="btn btn-secondary">
             <x-lucide-arrow-left class="size-4" />
             Volver
         </a>

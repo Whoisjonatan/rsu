@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Services\Dni\ConsultasApiLookup;
 use App\Services\Dni\DniLookup;
 use App\Services\Dni\NullLookup;
+use App\Support\ListUrl;
 use App\Support\Status;
 use Carbon\Carbon;
 use Illuminate\Foundation\AliasLoader;
@@ -40,5 +41,6 @@ class AppServiceProvider extends ServiceProvider
 
         // Las vistas escriben Status::tone(...) sin importar la clase.
         AliasLoader::getInstance()->alias('Status', Status::class);
+        AliasLoader::getInstance()->alias('ListUrl', ListUrl::class);
     }
 }

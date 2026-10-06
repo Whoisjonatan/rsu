@@ -3,7 +3,8 @@
     $byDate = $tab === 'fecha';
     $summary = $report['summary'] ?? null;
     $rows = $report['data'] ?? [];
-    $exportUrl = request()->fullUrlWithQuery(['export' => 'csv']);
+    $hasRows = $report && $rows->total() > 0;
+    $exportUrl = request()->fullUrlWithQuery(['export' => 'csv', 'page' => null]);
 
     // Por qué un día puede salir vacío, para no dejar la tabla muda.
     $emptyReason = function () use ($byDate, $filters) {
@@ -82,7 +83,7 @@
                     </select>
                 </label>
 
-                @if (count($rows) > 0)
+                @if ($hasRows)
                     <a href="{{ $exportUrl }}" class="btn btn-secondary">
                         <x-lucide-download class="size-4" />
                         Exportar
@@ -159,6 +160,10 @@
                     </tbody>
                 </table>
             </div>
+
+            @if ($report)
+                {{ $rows->links() }}
+            @endif
         </x-card>
     </div>
 </x-layouts.app>

@@ -31,7 +31,25 @@ class ContractRequest extends FormRequest
             'regime' => ['nullable', 'string', 'max:60'],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'salary' => ['required', 'numeric', 'decimal:0,2', 'min:1', 'max:99999999.99'],
+            'probation_months' => ['nullable', 'integer', 'min:1', 'max:'.Contract::MAX_PROBATION_MONTHS],
             'description' => ['nullable', 'string', 'max:255'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'salary.required' => 'Ingresa el salario.',
+            'salary.numeric' => 'El salario debe ser un monto.',
+            'salary.decimal' => 'El salario admite hasta 2 decimales.',
+            'salary.min' => 'El salario debe ser mayor a cero.',
+            'probation_months.integer' => 'El período de prueba se indica en meses enteros.',
+            'probation_months.min' => 'El período de prueba debe ser de al menos 1 mes.',
+            'probation_months.max' => 'El período de prueba no puede pasar de '.Contract::MAX_PROBATION_MONTHS.' meses.',
         ];
     }
 
@@ -95,6 +113,13 @@ class ContractRequest extends FormRequest
                 // "Los contratos eventuales pueden ser solo cada 2 meses".
                 $errors['end_date'] = 'Un contrato eventual solo puede pactarse por períodos de 2 meses.';
             }
+        }
+
+        // El período de prueba no puede durar más que el propio contrato.
+        $probation = (int) $this->input('probation_months');
+
+        if ($end && $probation > 0 && $start->copy()->addMonthsNoOverflow($probation)->subDay()->gt($end)) {
+            $errors['probation_months'] = 'El período de prueba no puede ser más largo que el contrato.';
         }
 
         // Dos contratos no pueden solaparse para la misma persona.

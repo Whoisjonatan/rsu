@@ -53,10 +53,12 @@
                         <tr>
                             <th>DNI</th>
                             <th>Apellidos y nombres</th>
+                            <th>Correo electrónico</th>
                             <th>Función</th>
                             <th>Contrato</th>
                             <th>Vigencia</th>
                             <th>Estado</th>
+                            <th>Fecha de creación</th>
                             <th class="text-right">Acciones</th>
                         </tr>
                     </thead>
@@ -80,6 +82,13 @@
                                         <span class="font-medium text-stone-800">{{ $person->full_name }}</span>
                                     </div>
                                 </td>
+                                <td>
+                                    @if ($person->email)
+                                        <a href="mailto:{{ $person->email }}" class="text-stone-600 hover:text-brand-700 hover:underline">{{ $person->email }}</a>
+                                    @else
+                                        <span class="text-stone-400">—</span>
+                                    @endif
+                                </td>
                                 <td>{{ $person->usertype?->name ?? '—' }}</td>
                                 <td>
                                     @if ($contract)
@@ -92,8 +101,13 @@
                                 <td>
                                     <x-badge :tone="Status::tone('person', $state)">{{ Status::label('person', $state) }}</x-badge>
                                 </td>
+                                <td><x-datetime :value="$person->created_at" /></td>
                                 <td>
                                     <div class="flex justify-end gap-1">
+                                        <a href="{{ route('people.edit', [$person, 'tab' => 'contratos']) }}" class="icon-btn"
+                                            title="Contratos" aria-label="Contratos de {{ $person->full_name }}">
+                                            <x-lucide-file-text class="size-3.5" />
+                                        </a>
                                         <a href="{{ route('people.edit', $person) }}" class="icon-btn" title="Editar"
                                             aria-label="Editar {{ $person->full_name }}">
                                             <x-lucide-pencil class="size-3.5" />
@@ -107,7 +121,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <x-empty-row colspan="7" message="No hay personal que coincida con los filtros" />
+                            <x-empty-row colspan="9" message="No hay personal que coincida con los filtros" />
                         @endforelse
                     </tbody>
                 </table>

@@ -14,7 +14,7 @@ class UserTypeController extends Controller
     public function index(): View
     {
         return view('people.usertypes', [
-            'types' => UserType::withCount('users')->orderBy('name')->get(),
+            'types' => UserType::withCount('users')->orderBy('name')->paginate(10),
         ]);
     }
 

@@ -10,16 +10,33 @@
 @endphp
 
 <div class="grid items-start gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
-    {{-- Fotografía: formularios propios, fuera de la ficha. Necesita que la persona ya exista. --}}
+    {{--
+        Fotografía. En la edición tiene formularios propios que guardan al instante.
+        En el alta el archivo viaja con la ficha (atributo form="person-form"), así
+        que se elige antes de registrar y se guarda junto con la persona.
+    --}}
     <x-card>
         <x-card-header title="Fotografía"
-            :description="$person ? null : 'Disponible después de registrar a la persona.'" />
-        <div class="p-5" x-data="{ sending: false }">
+            :description="$person ? null : 'Se guardará al registrar a la persona.'" />
+        <div class="p-5" x-data="{
+            sending: false,
+            preview: null,
+            pick(event) {
+                const file = event.target.files[0]
+                if (this.preview) URL.revokeObjectURL(this.preview)
+                this.preview = file ? URL.createObjectURL(file) : null
+            },
+            clear() {
+                this.$refs.photo.value = ''
+                this.pick({ target: this.$refs.photo })
+            },
+        }">
             <div class="grid aspect-3/4 w-full place-items-center overflow-hidden rounded-lg border border-stone-200 bg-stone-50">
                 @if ($person?->photo_url)
                     <img src="{{ $person->photo_url }}" alt="" class="size-full object-cover">
                 @else
-                    <span class="text-center text-stone-300">
+                    <img x-show="preview" x-cloak :src="preview" alt="" class="size-full object-cover">
+                    <span x-show="!preview" class="text-center text-stone-300">
                         <x-lucide-user-round class="mx-auto size-10" stroke-width="1.5" />
                         <span class="mt-2 block text-[11px] font-semibold tracking-wide text-stone-400 uppercase">Sin fotografía</span>
                     </span>
@@ -51,9 +68,15 @@
                         </form>
                     @endif
                 @else
-                    <button type="button" class="btn btn-secondary w-full" disabled>
+                    <input type="file" name="photo" form="person-form" accept="image/jpeg,image/png" class="hidden"
+                        x-ref="photo" @change="pick($event)">
+                    <button type="button" class="btn btn-secondary w-full" @click="$refs.photo.click()">
                         <x-lucide-image-plus class="size-4" />
-                        Cargar imagen
+                        <span x-text="preview ? 'Cambiar imagen' : 'Cargar imagen'">Cargar imagen</span>
+                    </button>
+                    <button type="button" class="btn btn-danger w-full" x-show="preview" x-cloak @click="clear()">
+                        <x-lucide-trash-2 class="size-4" />
+                        Quitar imagen
                     </button>
                 @endif
             </div>
@@ -61,11 +84,15 @@
             @error('photo')
                 <p class="mt-3 text-[11px] font-medium text-red-600">{{ $message }}</p>
             @enderror
+            @if (! $person && $errors->any() && ! $errors->has('photo'))
+                {{-- El navegador no conserva el archivo elegido tras un error de validación. --}}
+                <p class="mt-3 text-[11px] font-medium text-amber-700">Si habías elegido una foto, vuelve a cargarla.</p>
+            @endif
             <p class="mt-3 text-[11px] text-stone-500">Formatos admitidos: JPG o PNG · máx. 4 MB.</p>
         </div>
     </x-card>
 
-    <form method="POST" class="space-y-5"
+    <form method="POST" id="person-form" class="space-y-5" enctype="multipart/form-data"
         action="{{ $person ? route('people.update', $person) : route('people.store') }}"
         x-data="{
             sending: false,
@@ -238,7 +265,7 @@
         </x-card>
 
         <div class="flex justify-end gap-2">
-            <a href="{{ route('people.index') }}" class="btn btn-secondary">Cancelar</a>
+            <a href="{{ ListUrl::get('people.index') }}" class="btn btn-secondary">Cancelar</a>
             <button type="submit" class="btn btn-primary" :disabled="sending">
                 <x-lucide-loader-circle class="size-4 animate-spin" x-show="sending" x-cloak />
                 <x-lucide-save class="size-4" x-show="!sending" />

@@ -8,7 +8,10 @@
     storeUrl: @js(route('contracts.store', $person)),
     updateUrl: @js(route('contracts.update', [$person, '__ID__'])),
     destroyUrl: @js(route('contracts.destroy', [$person, '__ID__'])),
-    defaults: { type: 'eventual', regime: @js($regimes[0]), start_date: @js(now()->toDateString()), end_date: '' },
+    defaults: {
+        type: 'eventual', regime: @js($regimes[0]), start_date: @js(now()->toDateString()), end_date: '',
+        salary: '', probation_months: '',
+    },
     old: @js(session()->getOldInput()),
     errors: @js($errors->getMessages()),
 })">
@@ -30,6 +33,8 @@
                         <th>Fecha inicio</th>
                         <th>Fecha término</th>
                         <th>Duración</th>
+                        <th class="text-right">Salario</th>
+                        <th>Período de prueba</th>
                         <th>Estado</th>
                         <th class="text-right">Acciones</th>
                     </tr>
@@ -43,23 +48,27 @@
                             <td>{{ $contract->start_date->format('d/m/Y') }}</td>
                             <td>{{ $contract->end_date?->format('d/m/Y') ?? 'Indefinido' }}</td>
                             <td>{{ $contract->duration_label }}</td>
+                            <td class="text-right whitespace-nowrap tabular-nums">{{ $contract->salary_label }}</td>
+                            <td>{{ $contract->probation_label }}</td>
                             <td>
                                 <x-badge :tone="$contract->is_active ? 'green' : 'slate'">
                                     {{ $contract->is_active ? 'Vigente' : 'Culminado' }}
                                 </x-badge>
                             </td>
                             <td>
-                                <div class="flex justify-end">
-                                    <button type="button" class="icon-btn icon-btn-danger" title="Eliminar"
-                                        aria-label="Eliminar contrato {{ $contract->code }}"
-                                        @click="askDelete(@js(['id' => $contract->id, 'label' => $contract->code]))">
-                                        <x-lucide-trash-2 class="size-3.5" />
-                                    </button>
-                                </div>
+                                <x-row-actions :label="'contrato '.$contract->code" :row="[
+                                    'id' => $contract->id,
+                                    'type' => $contract->type,
+                                    'regime' => $contract->regime,
+                                    'start_date' => $contract->start_date->toDateString(),
+                                    'end_date' => $contract->end_date?->toDateString(),
+                                    'salary' => $contract->salary,
+                                    'probation_months' => $contract->probation_months,
+                                ]" />
                             </td>
                         </tr>
                     @empty
-                        <x-empty-row colspan="8" message="Esta persona todavía no tiene contratos registrados" />
+                        <x-empty-row colspan="10" message="Esta persona todavía no tiene contratos registrados" />
                     @endforelse
                 </tbody>
             </table>
@@ -70,9 +79,10 @@
         <x-card-header title="Reglas de contratación" />
         <dl class="divide-y divide-stone-100 p-5 pt-0 text-[13px]">
             @foreach ([
-                'Nombrado' => 'Vínculo permanente sin fecha de término. Da derecho a vacaciones.',
-                'Permanente' => 'Contrato indefinido. Da derecho a vacaciones.',
-                'Eventual' => 'Solo puede pactarse por períodos de 2 meses. No da derecho a vacaciones.',
+                'Nombrado' => 'Vínculo permanente: solo lleva fecha de inicio. Da derecho a vacaciones.',
+                'Permanente' => 'Contrato indefinido: solo lleva fecha de inicio. Da derecho a vacaciones.',
+                'Eventual' => 'Contrato temporal: lleva fecha de inicio y de término, por períodos de hasta 2 meses. No da derecho a vacaciones.',
+                'Programación' => 'Solo el personal con contrato vigente puede asignarse como conductor o ayudante en las programaciones de rutas.',
             ] as $term => $detail)
                 <div class="flex gap-4 py-3">
                     <dt class="w-32 shrink-0 font-semibold text-stone-900">{{ $term }}</dt>
@@ -82,7 +92,7 @@
         </dl>
     </x-card>
 
-    <x-crud-form name="contract" title-new="Nuevo contrato" title-edit="Editar contrato" submit-label="Registrar">
+    <x-crud-form name="contract" title-new="Nuevo contrato" title-edit="Editar contrato">
         <div class="grid gap-4 sm:grid-cols-2">
             <x-field label="Tipo de contrato" name="type" required live>
                 <select id="type" name="type" x-model="form.type" class="field" :class="error('type') && 'field-error'">
@@ -105,21 +115,31 @@
                     :class="error('start_date') && 'field-error'">
             </x-field>
 
-            {{-- Nombrado y permanente son indefinidos: no llevan fecha de término. --}}
-            <div>
-                <label for="end_date" class="label">
-                    Fecha de término
-                    <span class="ml-0.5 text-brand-600" x-show="form.type === 'eventual'">*</span>
-                </label>
-                <input id="end_date" name="end_date" type="date" class="field" :disabled="form.type !== 'eventual'"
-                    :required="form.type === 'eventual'" :min="form.start_date"
-                    x-bind:value="form.type === 'eventual' ? form.end_date : ''"
-                    @input="form.end_date = $event.target.value" :class="error('end_date') && 'field-error'">
-                <p x-show="error('end_date')" x-text="error('end_date')" x-cloak
-                    class="mt-1.5 text-[11px] font-medium text-red-600"></p>
-                <p x-show="!error('end_date')" class="mt-1.5 text-[11px] text-stone-500"
-                    x-text="form.type === 'eventual' ? 'Máximo 2 meses' : 'Los indefinidos no llevan término'"></p>
+            {{--
+                Nombrado y permanente son indefinidos: solo llevan fecha de inicio. El
+                campo se oculta y queda deshabilitado, así que no viaja en el envío.
+            --}}
+            <x-field label="Fecha de término" name="end_date" required live hint="Máximo 2 meses"
+                x-show="form.type === 'eventual'">
+                <input id="end_date" name="end_date" type="date" x-model="form.end_date" class="field"
+                    :disabled="form.type !== 'eventual'" :required="form.type === 'eventual'" :min="form.start_date"
+                    :class="error('end_date') && 'field-error'">
+            </x-field>
+            <div x-show="form.type !== 'eventual'" class="self-end pb-2.5 text-[12px] text-stone-500">
+                Contrato indefinido: no lleva fecha de término.
             </div>
+
+            <x-field label="Salario mensual (S/)" name="salary" required live>
+                <input id="salary" name="salary" type="number" x-model="form.salary" min="1" step="0.01"
+                    inputmode="decimal" placeholder="0.00" required class="field tabular-nums"
+                    :class="error('salary') && 'field-error'">
+            </x-field>
+
+            <x-field label="Período de prueba (meses)" name="probation_months" live hint="Opcional · déjalo vacío si no tiene">
+                <input id="probation_months" name="probation_months" type="number" x-model="form.probation_months"
+                    min="1" max="{{ App\Models\Contract::MAX_PROBATION_MONTHS }}" step="1" inputmode="numeric"
+                    class="field tabular-nums" :class="error('probation_months') && 'field-error'">
+            </x-field>
         </div>
 
         <p x-show="form.type === 'eventual'"

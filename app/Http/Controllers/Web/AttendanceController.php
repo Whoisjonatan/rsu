@@ -10,6 +10,8 @@ use App\Support\Status;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -17,6 +19,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 /** Marcación de asistencia (W11) y su reporte (W12). */
 class AttendanceController extends Controller
 {
+    /** Filas por página en la tabla del reporte (W12). */
+    private const PER_PAGE = 9;
+
     public function __construct(private readonly AttendanceService $attendances) {}
 
     /**
@@ -82,6 +87,16 @@ class AttendanceController extends Controller
 
         if ($report && $request->query('export') === 'csv') {
             return $this->csv($report, $tab, $filters);
+        }
+
+        // El resumen y el CSV usan todas las filas; la tabla solo muestra una página.
+        if ($report) {
+            $report['data'] = (new LengthAwarePaginator(
+                collect($report['data'])->forPage(Paginator::resolveCurrentPage(), self::PER_PAGE)->values(),
+                count($report['data']),
+                self::PER_PAGE,
+                options: ['path' => $request->url()],
+            ))->withQueryString();
         }
 
         return view('attendances.report', [

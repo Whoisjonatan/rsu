@@ -100,7 +100,7 @@
                     </select>
                 </x-field>
 
-                <x-field label="Conductor" name="driver_id" required>
+                <x-field label="Conductor" name="driver_id" required hint="Solo aparece personal con contrato vigente">
                     <select id="driver_id" name="driver_id" x-model="form.driver_id" class="{{ $fieldClass('driver_id') }}" required>
                         <option value="">Selecciona un conductor</option>
                         @foreach ($drivers as $person)
@@ -109,7 +109,7 @@
                     </select>
                 </x-field>
 
-                <x-field label="Ayudante" name="helper_id">
+                <x-field label="Ayudante" name="helper_id" hint="Solo aparece personal con contrato vigente">
                     <select id="helper_id" name="helper_id" x-model="form.helper_id" class="{{ $fieldClass('helper_id') }}">
                         <option value="">Sin ayudante</option>
                         @foreach ($helpers as $person)

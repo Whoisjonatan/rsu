@@ -161,9 +161,16 @@ class SchedulingController extends Controller
      */
     private function formData(?Scheduling $current = null): array
     {
-        // Al editar, cada combo conserva a su titular aunque ya no tenga esa función.
+        // Solo entra quien tiene un contrato vigente o por empezar: es el contrato
+        // el que habilita a programar a alguien. La fecha exacta la sigue validando
+        // SchedulingRules, porque la programación puede caer fuera del contrato.
+        // Al editar, cada combo conserva a su titular aunque ya no cumpla.
+        $today = now()->toDateString();
         $staff = fn (string $slug, ?int $keep) => User::query()
-            ->where(fn ($q) => $q->ofFunction($slug)->when($keep, fn ($q) => $q->orWhere('id', $keep)))
+            ->where(fn ($q) => $q
+                ->where(fn ($q) => $q->ofFunction($slug)->whereHas('contracts', fn ($c) => $c
+                    ->where(fn ($c) => $c->whereNull('end_date')->orWhere('end_date', '>=', $today))))
+                ->when($keep, fn ($q) => $q->orWhere('id', $keep)))
             ->orderBy('lastname')
             ->orderBy('name')
             ->get(['id', 'name', 'lastname', 'dni']);

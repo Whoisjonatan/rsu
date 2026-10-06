@@ -15,8 +15,11 @@ class Contract extends Model
     /** Duracion maxima de un contrato eventual, en meses. */
     public const TEMPORARY_MONTHS = 2;
 
+    /** Período de prueba más largo que admite el formulario, en meses. */
+    public const MAX_PROBATION_MONTHS = 12;
+
     protected $fillable = [
-        'user_id', 'code', 'type', 'regime', 'start_date', 'end_date', 'description',
+        'user_id', 'code', 'type', 'regime', 'start_date', 'end_date', 'salary', 'probation_months', 'description',
     ];
 
     protected $appends = ['is_active', 'duration_label'];
@@ -26,6 +29,8 @@ class Contract extends Model
         return [
             'start_date' => 'date:Y-m-d',
             'end_date' => 'date:Y-m-d',
+            'salary' => 'decimal:2',
+            'probation_months' => 'integer',
         ];
     }
 
@@ -80,6 +85,22 @@ class Contract extends Model
             return $months >= 1
                 ? $months.' '.($months === 1 ? 'mes' : 'meses')
                 : $this->start_date->diffInDays($this->end_date) + 1 .' días';
+        });
+    }
+
+    /** Columna SALARIO de W09: "S/ 1,500.00", o "—" en los contratos anteriores al campo. */
+    protected function salaryLabel(): Attribute
+    {
+        return Attribute::get(fn () => $this->salary === null ? '—' : 'S/ '.number_format((float) $this->salary, 2));
+    }
+
+    /** Columna PERÍODO DE PRUEBA de W09: "3 meses", o "—" si no tiene. */
+    protected function probationLabel(): Attribute
+    {
+        return Attribute::get(fn () => match ($this->probation_months) {
+            null => '—',
+            1 => '1 mes',
+            default => $this->probation_months.' meses',
         });
     }
 

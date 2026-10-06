@@ -10,7 +10,7 @@
 <x-layouts.app :title="$editing ? 'Vehículo '.$vehicle->code : 'Nuevo vehículo'"
     :subtitle="$editing ? 'Vehículos › Editar ficha' : 'Vehículos › Registrar un vehículo'">
     <x-slot:actions>
-        <a href="{{ route('vehicles.index') }}" class="btn btn-secondary">
+        <a href="{{ ListUrl::get('vehicles.index') }}" class="btn btn-secondary">
             <x-lucide-arrow-left class="size-4" />
             Volver
         </a>
@@ -177,7 +177,7 @@
             @endif
 
             <div class="flex justify-end gap-2">
-                <a href="{{ route('vehicles.index') }}" class="btn btn-secondary">Cancelar</a>
+                <a href="{{ ListUrl::get('vehicles.index') }}" class="btn btn-secondary">Cancelar</a>
                 <button type="submit" class="btn btn-primary" :disabled="sending">
                     <x-lucide-loader-circle class="size-4 animate-spin" x-show="sending" x-cloak />
                     <x-lucide-save class="size-4" x-show="!sending" />

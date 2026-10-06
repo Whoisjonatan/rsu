@@ -9,6 +9,7 @@ use App\Models\BrandModel;
 use App\Models\Vehicle;
 use App\Models\VehicleColor;
 use App\Models\VehicleType;
+use App\Support\ListUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -18,6 +19,8 @@ class VehicleController extends Controller
     /** W04 Listado de vehículos. */
     public function index(Request $request): View
     {
+        ListUrl::remember('vehicles.index');
+
         $vehicles = Vehicle::query()
             // Las imágenes vienen todas: el visor de la fila las recorre sin
             // tener que pedirlas al abrirlo.
@@ -27,7 +30,7 @@ class VehicleController extends Controller
             ->when($request->filled('type_id'), fn ($q) => $q->where('type_id', $request->integer('type_id')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')->toString()))
             ->orderBy('code')
-            ->paginate(15)
+            ->paginate(10)
             ->withQueryString();
 
         return view('vehicles.index', [
@@ -70,7 +73,7 @@ class VehicleController extends Controller
     {
         $vehicle->update($request->safe()->except(['images', 'profile_image']));
 
-        return redirect()->route('vehicles.index')->with('success', "Vehículo {$vehicle->code} actualizado.");
+        return redirect()->to(ListUrl::get('vehicles.index'))->with('success', "Vehículo {$vehicle->code} actualizado.");
     }
 
     public function destroy(Vehicle $vehicle): RedirectResponse

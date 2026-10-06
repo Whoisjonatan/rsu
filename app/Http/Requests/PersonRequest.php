@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\UserType;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
@@ -42,6 +43,8 @@ class PersonRequest extends FormRequest
             'license_category' => ['nullable', 'string', 'max:10'],
             'license_expiration' => ['nullable', 'date'],
             'password' => [$id ? 'nullable' : 'required', 'string', 'min:8'],
+            // En el alta la foto viaja con la ficha; en la edición tiene su propio formulario.
+            'photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:4096'],
         ];
     }
 
@@ -95,6 +98,9 @@ class PersonRequest extends FormRequest
             'email.email' => 'El formato de correo no es válido.',
             'email.unique' => 'Ya existe una persona con ese correo.',
             'password.min' => 'La contraseña debe tener al menos 8 caracteres.',
+            'photo.image' => 'La foto debe ser una imagen.',
+            'photo.mimes' => 'La foto debe ser JPG o PNG.',
+            'photo.max' => 'La foto no puede pesar más de 4 MB.',
         ];
     }
 
@@ -106,7 +112,7 @@ class PersonRequest extends FormRequest
      */
     public function personData(): array
     {
-        $data = $this->validated();
+        $data = Arr::except($this->validated(), 'photo');
 
         if (blank($data['password'] ?? null)) {
             unset($data['password']);

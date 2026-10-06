@@ -25,6 +25,8 @@
                             <th>Función</th>
                             <th>Descripción</th>
                             <th class="text-right">Personal</th>
+                            <th>Fecha de creación</th>
+                            <th>Fecha de modificación</th>
                             <th class="text-right">Acciones</th>
                         </tr>
                     </thead>
@@ -44,6 +46,8 @@
                                 </td>
                                 <td><span class="text-stone-500">{{ $type->description ?: '—' }}</span></td>
                                 <td class="text-right tabular-nums">{{ $type->users_count }}</td>
+                                <td><x-datetime :value="$type->created_at" /></td>
+                                <td><x-datetime :value="$type->updated_at" /></td>
                                 <td>
                                     <x-row-actions :row="$type->only('id', 'name', 'description')" :label="$type->name"
                                         :deletable="! $type->is_system">
@@ -57,11 +61,13 @@
                                 </td>
                             </tr>
                         @empty
-                            <x-empty-row colspan="4" />
+                            <x-empty-row colspan="6" />
                         @endforelse
                     </tbody>
                 </table>
             </div>
+
+            {{ $types->links() }}
         </x-card>
 
         <x-crud-form name="usertype" title-new="Nueva función" title-edit="Editar función">
