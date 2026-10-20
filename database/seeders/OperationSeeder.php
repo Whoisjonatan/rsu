@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use App\Models\District;
 use App\Models\Schedule;
-use App\Models\Sector;
 use App\Models\User;
 use App\Models\UserType;
 use App\Models\Zone;
@@ -31,13 +30,17 @@ class OperationSeeder extends Seeder
         ['Noche', '18:00:00', '23:59:00'],
     ];
 
-    /** @var list<array{string, string, float}> zona, distrito, area km2 */
+    /**
+     * Sin área: sale del perímetro, que se dibuja en W14.
+     *
+     * @var list<array{string, string}> zona, distrito
+     */
     private const ZONES = [
-        ['José Leonardo Ortiz', 'José Leonardo Ortiz', 28.22],
-        ['La Victoria', 'La Victoria', 29.36],
-        ['Chiclayo Centro', 'Chiclayo', 50.35],
-        ['Pimentel', 'Pimentel', 66.53],
-        ['Monsefú', 'Monsefú', 44.94],
+        ['José Leonardo Ortiz', 'José Leonardo Ortiz'],
+        ['La Victoria', 'La Victoria'],
+        ['Chiclayo Centro', 'Chiclayo'],
+        ['Pimentel', 'Pimentel'],
+        ['Monsefú', 'Monsefú'],
     ];
 
     public function run(): void
@@ -57,22 +60,16 @@ class OperationSeeder extends Seeder
             ]);
         }
 
-        foreach (self::ZONES as [$zoneName, $districtName, $area]) {
+        foreach (self::ZONES as [$zoneName, $districtName]) {
             $district = District::where('name', $districtName)->first();
 
             if (! $district) {
                 continue;
             }
 
-            $sector = Sector::updateOrCreate(
-                ['name' => 'Sector '.$zoneName, 'district_id' => $district->id],
-                ['area' => $area],
-            );
-
             Zone::updateOrCreate(['name' => $zoneName], [
-                'area' => $area,
-                'sector_id' => $sector->id,
                 'district_id' => $district->id,
+                'status' => 'activa',
             ]);
         }
 

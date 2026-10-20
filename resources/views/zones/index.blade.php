@@ -6,17 +6,26 @@
         storeUrl: @js(route('zones.store')),
         updateUrl: @js(route('zones.update', '__ID__')),
         destroyUrl: @js(route('zones.destroy', '__ID__')),
-        defaults: { name: '', district_id: '', sector_id: '', area: '', description: '' },
+        defaults: {
+            name: '', department_id: '', province_id: '', district_id: '', average_waste_kg: '', status: 'activa',
+            description: '',
+        },
         old: @js(session()->getOldInput()),
         errors: @js($errors->getMessages()),
     })">
         <x-card>
             <x-card-header title="Zonas de recolección"
-                description="Cada zona pertenece a un distrito y agrupa las rutas y programaciones.">
-                <button type="button" class="btn btn-primary btn-sm" @click="create()">
-                    <x-lucide-plus class="size-3.5" />
-                    Nueva zona
-                </button>
+                description="Cada zona pertenece a un distrito y agrupa las rutas y programaciones. El área se calcula al trazar el perímetro.">
+                <div class="flex gap-2">
+                    <a href="{{ route('zones.map') }}" class="btn btn-secondary btn-sm">
+                        <x-lucide-map class="size-3.5" />
+                        Mapa
+                    </a>
+                    <button type="button" class="btn btn-primary btn-sm" @click="create()">
+                        <x-lucide-plus class="size-3.5" />
+                        Nueva zona
+                    </button>
+                </div>
             </x-card-header>
 
             <div class="overflow-x-auto">
@@ -24,10 +33,12 @@
                     <thead>
                         <tr>
                             <th>Zona</th>
-                            <th>Distrito</th>
-                            <th>Sector</th>
+                            <th>Ubicación</th>
+                            <th>Descripción</th>
                             <th class="text-right">Área</th>
+                            <th class="text-right">Residuos promedio</th>
                             <th>Perímetro</th>
+                            <th>Estado</th>
                             <th class="text-right">Acciones</th>
                         </tr>
                     </thead>
@@ -42,15 +53,27 @@
                                         <span class="font-medium text-stone-900">{{ $zone->name }}</span>
                                     </div>
                                 </td>
-                                <td>{{ $zone->district?->name ?? '—' }}</td>
                                 <td>
-                                    @if ($zone->sector)
-                                        {{ $zone->sector->name }}
-                                    @else
-                                        <span class="text-stone-400">Sin sector</span>
+                                    <span class="block text-stone-900">{{ $zone->district?->name ?? '—' }}</span>
+                                    @if ($zone->district)
+                                        <span class="block text-[11px] text-stone-500">
+                                            {{ $zone->district->province?->name }} · {{ $zone->district->department?->name }}
+                                        </span>
                                     @endif
                                 </td>
-                                <td class="text-right tabular-nums">{{ $zone->area ? (float) $zone->area.' km²' : '—' }}</td>
+                                <td class="max-w-64">
+                                    @if ($zone->description)
+                                        <span class="block truncate" title="{{ $zone->description }}">{{ $zone->description }}</span>
+                                    @else
+                                        <span class="text-stone-400">—</span>
+                                    @endif
+                                </td>
+                                <td class="text-right whitespace-nowrap tabular-nums">
+                                    {{ $zone->area !== null ? number_format((float) $zone->area, 3).' km²' : '—' }}
+                                </td>
+                                <td class="text-right whitespace-nowrap tabular-nums">
+                                    {{ $zone->average_waste_kg !== null ? number_format((float) $zone->average_waste_kg, 2).' kg' : '—' }}
+                                </td>
                                 <td>
                                     @if ($zone->coords_count)
                                         <x-badge tone="green">{{ $zone->coords_count }} vértices</x-badge>
@@ -59,12 +82,17 @@
                                     @endif
                                 </td>
                                 <td>
+                                    <x-badge :tone="Status::tone('zone', $zone->status)">{{ Status::label('zone', $zone->status) }}</x-badge>
+                                </td>
+                                <td>
                                     <x-row-actions :label="$zone->name" :row="[
                                         'id' => $zone->id,
                                         'name' => $zone->name,
+                                        'department_id' => (string) ($zone->district?->department_id ?? ''),
+                                        'province_id' => (string) ($zone->district?->province_id ?? ''),
                                         'district_id' => (string) $zone->district_id,
-                                        'sector_id' => (string) ($zone->sector_id ?? ''),
-                                        'area' => $zone->area ? (string) (float) $zone->area : '',
+                                        'average_waste_kg' => $zone->average_waste_kg !== null ? (string) (float) $zone->average_waste_kg : '',
+                                        'status' => $zone->status,
                                         'description' => $zone->description,
                                     ]">
                                         <a href="{{ route('zones.perimeter', $zone) }}" class="icon-btn" title="Dibujar perímetro"
@@ -75,7 +103,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <x-empty-row colspan="6" message="Todavía no hay zonas registradas" />
+                            <x-empty-row colspan="8" message="Todavía no hay zonas registradas" />
                         @endforelse
                     </tbody>
                 </table>
@@ -83,30 +111,20 @@
         </x-card>
 
         <p class="mt-4 text-[12px] text-stone-500">
-            El icono del mapa de cada fila abre el trazado de su perímetro. Las rutas de las zonas se gestionan en
+            El icono del mapa de cada fila abre el trazado de su perímetro, y al guardarlo se calcula el área. Las rutas
+            de las zonas se gestionan en
             <a href="{{ route('routes.index') }}" class="font-medium text-brand-500 hover:text-brand-600">Rutas</a>.
         </p>
 
+        {{-- Departamento → provincia → distrito: cada nivel filtra el siguiente. Solo se guarda el distrito. --}}
         <div x-data="{
-            sectors: @js($sectors),
-            newSector: '',
-            creating: false,
-            sectorError: null,
-            get districtSectors() { return this.sectors.filter((sector) => String(sector.district_id) === String(form.district_id)) },
-            // Crear el sector sin salir del modal: va al API con la sesión.
-            async addSector() {
-                this.creating = true
-                this.sectorError = null
-                try {
-                    const { data } = await window.api.post('/sectors', { name: this.newSector.trim(), district_id: form.district_id })
-                    this.sectors.push(data)
-                    form.sector_id = String(data.id)
-                    this.newSector = ''
-                } catch (error) {
-                    this.sectorError = error.response?.data?.errors?.name?.[0] ?? error.response?.data?.message ?? 'No se pudo crear el sector'
-                } finally {
-                    this.creating = false
-                }
+            provinces: @js($provinces),
+            districts: @js($districts),
+            get departmentProvinces() {
+                return this.provinces.filter((province) => String(province.department_id) === String(form.department_id))
+            },
+            get provinceDistricts() {
+                return this.districts.filter((district) => String(district.province_id) === String(form.province_id))
             },
         }">
             <x-crud-form name="zone" title-new="Nueva zona" title-edit="Editar zona">
@@ -115,52 +133,66 @@
                         :class="error('name') && 'field-error'">
                 </x-field>
 
-                <div class="grid gap-4 sm:grid-cols-2">
-                    <x-field label="Distrito" name="district_id" required live>
-                        {{-- Al cambiar de distrito el sector elegido deja de aplicar. --}}
-                        <select id="district_id" name="district_id" x-model="form.district_id" required class="field"
-                            :class="error('district_id') && 'field-error'" @change="form.sector_id = ''">
-                            <option value="">Selecciona un distrito</option>
-                            @foreach ($districts as $district)
-                                <option value="{{ $district->id }}">{{ $district->name }}</option>
+                <div class="grid gap-4 sm:grid-cols-3">
+                    <x-field label="Departamento" name="department_id" required>
+                        <select id="department_id" name="department_id" x-model="form.department_id" required class="field"
+                            @change="form.province_id = ''; form.district_id = ''">
+                            <option value="">Selecciona</option>
+                            @foreach ($departments as $department)
+                                <option value="{{ $department->id }}">{{ $department->name }}</option>
                             @endforeach
                         </select>
                     </x-field>
 
-                    <x-field label="Área (km²)" name="area" live>
-                        <input id="area" name="area" type="number" step="0.001" min="0" x-model="form.area" class="field"
-                            :class="error('area') && 'field-error'">
+                    <x-field label="Provincia" name="province_id" required>
+                        <select id="province_id" name="province_id" x-model="form.province_id" required class="field"
+                            :disabled="!form.department_id" @change="form.district_id = ''">
+                            <option value="">Selecciona</option>
+                            <template x-for="province in departmentProvinces" :key="province.id">
+                                <option :value="province.id" x-text="province.name"
+                                    :selected="String(province.id) === String(form.province_id)"></option>
+                            </template>
+                        </select>
+                    </x-field>
+
+                    <x-field label="Distrito" name="district_id" required live>
+                        <select id="district_id" name="district_id" x-model="form.district_id" required class="field"
+                            :disabled="!form.province_id" :class="error('district_id') && 'field-error'">
+                            <option value="">Selecciona</option>
+                            <template x-for="district in provinceDistricts" :key="district.id">
+                                <option :value="district.id" x-text="district.name"
+                                    :selected="String(district.id) === String(form.district_id)"></option>
+                            </template>
+                        </select>
                     </x-field>
                 </div>
 
-                <x-field label="Sector" name="sector_id" live>
-                    <select id="sector_id" name="sector_id" x-model="form.sector_id" :disabled="!form.district_id" class="field"
-                        :class="error('sector_id') && 'field-error'">
-                        <option value="">Sin sector</option>
-                        <template x-for="sector in districtSectors" :key="sector.id">
-                            <option :value="sector.id" x-text="sector.name" :selected="String(sector.id) === String(form.sector_id)"></option>
-                        </template>
-                    </select>
-                    <p x-show="!form.district_id" class="mt-1.5 text-[11px] text-stone-500">Elige primero un distrito</p>
-                </x-field>
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <x-field label="Residuos promedio (kg)" name="average_waste_kg" live>
+                        <input id="average_waste_kg" name="average_waste_kg" type="number" step="0.01" min="0"
+                            inputmode="decimal" placeholder="0.00" x-model="form.average_waste_kg" class="field tabular-nums"
+                            :class="error('average_waste_kg') && 'field-error'">
+                    </x-field>
 
-                <div x-show="form.district_id" class="flex items-end gap-2">
-                    <label class="flex-1">
-                        <span class="label">Crear un sector nuevo</span>
-                        <input x-model="newSector" placeholder="Nombre del sector" class="field" maxlength="120"
-                            @keydown.enter.prevent="newSector.trim() && addSector()">
-                    </label>
-                    <button type="button" class="btn btn-secondary" :disabled="!newSector.trim() || creating" @click="addSector()">
-                        <x-lucide-loader-circle class="size-4 animate-spin" x-show="creating" x-cloak />
-                        Añadir
-                    </button>
+                    <x-field label="Estado" name="status" required live>
+                        <select id="status" name="status" x-model="form.status" required class="field"
+                            :class="error('status') && 'field-error'">
+                            @foreach (Status::options('zone') as $value => $label)
+                                <option value="{{ $value }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </x-field>
                 </div>
-                <p x-show="sectorError" x-text="sectorError" x-cloak class="-mt-2 text-[11px] font-medium text-red-600"></p>
 
                 <x-field label="Descripción" name="description" live>
                     <input id="description" name="description" x-model="form.description" maxlength="255" class="field"
                         :class="error('description') && 'field-error'">
                 </x-field>
+
+                <p class="flex items-start gap-2 rounded-md border border-stone-200 bg-stone-50 px-3 py-2.5 text-[12px] text-stone-600">
+                    <x-lucide-info class="mt-0.5 size-3.5 shrink-0 text-stone-400" />
+                    El área no se escribe: se calcula sola al trazar el perímetro de la zona en el mapa.
+                </p>
             </x-crud-form>
         </div>
 

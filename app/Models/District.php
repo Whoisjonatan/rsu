@@ -20,11 +20,6 @@ class District extends Model
         return $this->belongsTo(Province::class);
     }
 
-    public function sectors(): HasMany
-    {
-        return $this->hasMany(Sector::class);
-    }
-
     public function zones(): HasMany
     {
         return $this->hasMany(Zone::class);

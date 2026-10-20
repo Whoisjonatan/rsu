@@ -10,7 +10,7 @@
         ['/vehiculos/nuevo', 'Registrar vehículo', 'Da de alta una unidad de la flota.', 'truck'],
         ['/personal/nuevo', 'Registrar personal', 'Conductores, ayudantes y supervisores.', 'user-plus'],
         ['/asistencias', 'Reporte de asistencias', 'Presentes, tardanzas y faltas del periodo.', 'clipboard-check'],
-        ['/zonas', 'Zonas y perímetros', 'Sectores de recolección en el mapa.', 'map-pinned'],
+        ['/zonas', 'Zonas y perímetros', 'Zonas de recolección en el mapa.', 'map-pinned'],
         ['/turnos', 'Turnos', 'Horarios de cada turno de recolección.', 'clock'],
         // El terminal de marcación es una pantalla pública: se abre aparte.
         ['/marcacion', 'Terminal de marcación', 'Fichaje del personal con DNI y clave.', 'fingerprint', true],

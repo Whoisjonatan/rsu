@@ -135,6 +135,15 @@
   .data-table td {
     @apply px-4 py-3 text-stone-600;
   }
+
+  /* Nombre de las otras zonas en el mapa de W14: rótulo, no globo. */
+  .leaflet-tooltip.zone-reference-label {
+    @apply border-0 bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-stone-600 shadow-none;
+  }
+
+  .leaflet-tooltip.zone-reference-label::before {
+    @apply hidden;
+  }
 }
 
 /* Camión recolector animado (components/garbage-truck.blade.php). */

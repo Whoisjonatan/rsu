@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AddressSearchController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BrandController;
@@ -93,12 +94,13 @@ Route::name('api.')->group(function () {
         // Zonas (W13), su perimetro (W14) y sus rutas (W15)
         Route::apiResource('zones', ZoneController::class);
         Route::put('zones/{zone}/coords', [ZoneController::class, 'saveCoords']);
+        Route::post('zones/{zone}/overlaps', [ZoneController::class, 'overlaps']);
         Route::apiResource('routes', RouteController::class);
+        Route::get('departments', [GeographyController::class, 'departments']);
+        Route::get('provinces', [GeographyController::class, 'provinces']);
         Route::get('districts', [GeographyController::class, 'districts']);
-        Route::get('sectors', [GeographyController::class, 'sectors']);
-        Route::post('sectors', [GeographyController::class, 'storeSector']);
-        Route::put('sectors/{sector}', [GeographyController::class, 'updateSector']);
-        Route::delete('sectors/{sector}', [GeographyController::class, 'destroySector']);
+        // Buscador de direcciones del mapa (Nominatim), con freno para no abusar del servicio.
+        Route::get('address-search', AddressSearchController::class)->middleware('throttle:30,1');
 
         // Reporte de asistencias (W12)
         Route::get('attendances/by-person', [AttendanceController::class, 'byPerson']);

@@ -4,8 +4,9 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ZoneRequest;
+use App\Models\Department;
 use App\Models\District;
-use App\Models\Sector;
+use App\Models\Province;
 use App\Models\Zone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,13 +17,14 @@ class ZoneController extends Controller
     /** W13 Zonas. */
     public function index(): View
     {
-        $zones = Zone::with(['sector', 'district'])->withCount('coords')->orderBy('name')->get();
+        $zones = Zone::with(['district.province', 'district.department'])->withCount('coords')->orderBy('name')->get();
 
         return view('zones.index', [
             'zones' => $zones,
-            'districts' => District::orderBy('name')->get(['id', 'name']),
-            // Todos los sectores: el modal filtra los del distrito elegido.
-            'sectors' => Sector::orderBy('name')->get(['id', 'name', 'district_id']),
+            // Los tres niveles completos: el modal filtra en cascada sin ir al servidor.
+            'departments' => Department::whereHas('provinces')->orderBy('name')->get(['id', 'name']),
+            'provinces' => Province::orderBy('name')->get(['id', 'name', 'department_id']),
+            'districts' => District::orderBy('name')->get(['id', 'name', 'province_id', 'department_id']),
         ]);
     }
 
@@ -51,10 +53,53 @@ class ZoneController extends Controller
         return back()->with('success', "Zona \"{$zone->name}\" eliminada.");
     }
 
+    /** Mapa general: todas las zonas con su perímetro, y las que aún no lo tienen. */
+    public function map(): View
+    {
+        $zones = Zone::with(['coords', 'district'])->orderBy('name')->get();
+        [$drawn, $pending] = $zones->partition(fn (Zone $zone) => $zone->coords->count() >= 3);
+
+        return view('zones.map', [
+            'drawn' => $drawn->values(),
+            'pending' => $pending->values(),
+            'shapes' => $drawn->map(fn (Zone $zone) => [
+                'id' => $zone->id,
+                'name' => $zone->name,
+                'status' => $zone->status,
+                'points' => $zone->coords->map(fn ($coord) => [
+                    'latitude' => (float) $coord->latitude,
+                    'longitude' => (float) $coord->longitude,
+                ]),
+                'popup' => [
+                    'title' => $zone->name,
+                    'lines' => array_values(array_filter([
+                        $zone->district?->name,
+                        'Área: '.number_format((float) $zone->area, 3).' km²',
+                        $zone->average_waste_kg !== null ? 'Residuos promedio: '.number_format((float) $zone->average_waste_kg, 2).' kg' : null,
+                        $zone->isActive() ? null : 'Zona inactiva',
+                    ])),
+                    'link' => ['url' => route('zones.perimeter', $zone), 'label' => 'Editar perímetro →'],
+                ],
+            ])->values(),
+        ]);
+    }
+
     /** W14 Perímetro de la zona. */
     public function perimeter(Zone $zone): View
     {
-        return view('zones.perimeter', ['zone' => $zone->load('coords')]);
+        return view('zones.perimeter', [
+            'zone' => $zone->load('coords'),
+            // Los perímetros ya trazados de las demás zonas, de referencia: así se
+            // ve qué está cubierto y no se dibuja dos veces el mismo terreno.
+            'references' => Zone::whereKeyNot($zone->id)->has('coords')->with('coords')->orderBy('name')->get()
+                ->map(fn (Zone $other) => [
+                    'name' => $other->name,
+                    'points' => $other->coords->map(fn ($coord) => [
+                        'latitude' => (float) $coord->latitude,
+                        'longitude' => (float) $coord->longitude,
+                    ]),
+                ]),
+        ]);
     }
 
     public function savePerimeter(Request $request, Zone $zone): RedirectResponse
@@ -68,6 +113,14 @@ class ZoneController extends Controller
 
         $count = count($data['coords']);
 
-        return back()->with('success', $count === 0 ? 'Perímetro borrado.' : "Perímetro guardado con {$count} puntos.");
+        if ($count === 0) {
+            return back()->with('success', 'Perímetro borrado: la zona queda sin área.');
+        }
+
+        // Cruzarse con otra zona no impide guardar, pero se avisa.
+        $overlaps = collect(Zone::overlapsFor($data['coords'], $zone->id))->pluck('name');
+
+        return back()->with('success', "Perímetro guardado con {$count} puntos. Área: ".number_format((float) $zone->area, 3).' km².'
+            .($overlaps->isEmpty() ? '' : ' Ojo: se cruza con '.$overlaps->implode(', ').'.'));
     }
 }

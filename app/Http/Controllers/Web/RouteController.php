@@ -30,7 +30,8 @@ class RouteController extends Controller
 
         return view('zones.routes', [
             'routes' => $routes,
-            'zones' => Zone::orderBy('name')->get(['id', 'name']),
+            // Todas para el filtro; el modal solo ofrece las activas (ver la vista).
+            'zones' => Zone::orderBy('name')->get(['id', 'name', 'status']),
             'zoneFilter' => $request->query('zone_id'),
         ]);
     }

@@ -4,6 +4,7 @@ namespace App\Services\Scheduling;
 
 use App\Models\Scheduling;
 use App\Models\User;
+use App\Models\Zone;
 use Illuminate\Contracts\Validation\Validator as ValidatorContract;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -99,6 +100,8 @@ class SchedulingRules
             $data = $validator->getData();
             $data['weekdays'] = self::normalizeWeekdays($data['weekdays'] ?? null);
 
+            self::checkZone($validator, $data, $ignoreId);
+
             $dates = self::occurrenceDates($data);
 
             if ($dates === []) {
@@ -133,6 +136,26 @@ class SchedulingRules
             'start_date' => $data['start_date'] ?? null,
             'end_date' => $data['end_date'] ?? null,
         ]))->occurrenceDates();
+    }
+
+    /**
+     * Una zona inactiva no recibe programaciones nuevas. La que ya la tenía
+     * puede seguir editándose (incluida la edición masiva de W19) mientras no
+     * cambie de zona.
+     */
+    private static function checkZone(ValidatorContract $validator, array $data, ?int $ignoreId): void
+    {
+        $zone = Zone::find($data['zone_id'] ?? null);
+
+        if (! $zone || $zone->isActive()) {
+            return;
+        }
+
+        $alreadyThere = $ignoreId && Scheduling::whereKey($ignoreId)->where('zone_id', $zone->id)->exists();
+
+        if (! $alreadyThere) {
+            $validator->errors()->add('zone_id', "La zona \"{$zone->name}\" está inactiva: no se puede programar.");
+        }
     }
 
     /**

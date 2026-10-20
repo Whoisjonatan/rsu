@@ -29,7 +29,7 @@
                     @endforeach
                 </select>
                 <button type="button" class="btn btn-primary btn-sm"
-                    @click="create({ zone_ids: @js($zoneFilter ? [(string) $zoneFilter] : []) })">
+                    @click="create({ zone_ids: @js($zones->firstWhere('id', $zoneFilter)?->isActive() ? [(string) $zoneFilter] : []) })">
                     <x-lucide-plus class="size-3.5" />
                     Nueva ruta
                 </button>
@@ -154,8 +154,10 @@
             <div>
                 <span class="label">Zonas <span class="ml-0.5 text-brand-600">*</span></span>
                 <div class="flex flex-wrap gap-1.5">
+                    {{-- Una zona inactiva solo aparece si la ruta ya la tenía, para poder quitarla. --}}
                     @foreach ($zones as $zone)
                         <button type="button" :aria-pressed="form.zone_ids.includes('{{ $zone->id }}')"
+                            @unless ($zone->isActive()) x-show="form.zone_ids.includes('{{ $zone->id }}')" @endunless
                             @click="form.zone_ids = form.zone_ids.includes('{{ $zone->id }}')
                                 ? form.zone_ids.filter((id) => id !== '{{ $zone->id }}')
                                 : [...form.zone_ids, '{{ $zone->id }}']"
@@ -164,6 +166,9 @@
                                 : 'border-stone-300 text-stone-600 hover:border-stone-400'"
                             class="cursor-pointer rounded-md border px-3 py-1.5 text-[12px] font-medium">
                             {{ $zone->name }}
+                            @unless ($zone->isActive())
+                                <span class="font-normal opacity-75">(inactiva)</span>
+                            @endunless
                         </button>
                     @endforeach
                 </div>

@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Route;
+use App\Models\Zone;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -72,8 +73,27 @@ class RouteRequest extends FormRequest
                 return;
             }
 
+            $this->checkInactiveZones($validator);
             $this->checkDuplicates($validator);
         });
+    }
+
+    /**
+     * No se asignan rutas a zonas inactivas. Al editar, la ruta conserva las
+     * que ya tenía aunque se hayan desactivado después.
+     */
+    private function checkInactiveZones(Validator $validator): void
+    {
+        $kept = $this->route('route')?->zones()->pluck('zones.id')->all() ?? [];
+
+        $inactive = Zone::whereIn('id', array_map('intval', $this->input('zone_ids', [])))
+            ->where('status', 'inactiva')
+            ->whereNotIn('id', $kept)
+            ->pluck('name');
+
+        if ($inactive->isNotEmpty()) {
+            $validator->errors()->add('zone_ids', 'Zona inactiva: '.$inactive->implode(', ').'. Actívala antes de asignarle rutas.');
+        }
     }
 
     /**

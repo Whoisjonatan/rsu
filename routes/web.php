@@ -105,9 +105,9 @@ Route::middleware('auth')->group(function () {
     // Reporte de asistencias (W12).
     Route::get('asistencias', [AttendanceController::class, 'report'])->name('attendances.report');
 
-    // Zonas (W13), su perímetro (W14) y rutas (W15). Los sectores se crean desde
-    // el modal de zona contra el API (POST /api/sectors), sin salir del formulario.
+    // Zonas (W13), su perímetro (W14, del que sale el área) y rutas (W15).
     Route::get('zonas', [ZoneController::class, 'index'])->name('zones.index');
+    Route::get('zonas/mapa', [ZoneController::class, 'map'])->name('zones.map');
     Route::post('zonas', [ZoneController::class, 'store'])->name('zones.store');
     Route::put('zonas/{zone}', [ZoneController::class, 'update'])->name('zones.update');
     Route::delete('zonas/{zone}', [ZoneController::class, 'destroy'])->name('zones.destroy');

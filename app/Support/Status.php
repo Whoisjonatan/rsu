@@ -17,6 +17,10 @@ class Status
             'mantenimiento' => ['Mantenimiento', 'amber'],
             'baja' => ['De baja', 'slate'],
         ],
+        'zone' => [
+            'activa' => ['Activa', 'green'],
+            'inactiva' => ['Inactiva', 'slate'],
+        ],
         // Recorrido de un día (vehicleroutes).
         'route' => [
             'programado' => ['Programado', 'slate'],

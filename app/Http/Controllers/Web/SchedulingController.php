@@ -118,6 +118,8 @@ class SchedulingController extends Controller
                 ->get(),
             'zoneFilter' => $request->query('zone_id'),
             ...$this->formData(),
+            // Aquí las zonas solo filtran lo ya programado: van todas, también las inactivas.
+            'zones' => Zone::orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -176,7 +178,8 @@ class SchedulingController extends Controller
             ->get(['id', 'name', 'lastname', 'dni']);
 
         return [
-            'zones' => Zone::orderBy('name')->get(['id', 'name']),
+            // Solo las activas; al editar se conserva la zona de la programación.
+            'zones' => Zone::selectable([$current?->zone_id])->orderBy('name')->get(['id', 'name']),
             'routes' => Route::with('zones:id')->orderBy('name')->get(['id', 'name', 'status'])
                 ->map(fn (Route $route) => [
                     'id' => $route->id,
