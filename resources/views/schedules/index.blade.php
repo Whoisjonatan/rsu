@@ -17,6 +17,12 @@
 
         return $rest === 0 ? "{$hours} h" : "{$hours} h {$rest} min";
     };
+
+    /** Márgenes de marcación (Attendance), para la leyenda y el aviso del formulario. */
+    $opensBefore = App\Models\Attendance::OPENS_BEFORE;
+    $graceAfter = App\Models\Attendance::GRACE_AFTER;
+    $closesAfter = App\Models\Attendance::CLOSES_AFTER;
+    $today = now()->toImmutable();
 @endphp
 
 <x-layouts.app title="Turnos" subtitle="Cada programación se asigna a un turno; el recorrido se inicia por día y turno">
@@ -44,6 +50,7 @@
                             <th>Turno</th>
                             <th>Horario</th>
                             <th>Duración</th>
+                            <th>Marcación de asistencia</th>
                             <th>Descripción</th>
                             <th class="text-right">Programaciones</th>
                             <th class="text-right">Acciones</th>
@@ -66,6 +73,15 @@
                                     </span>
                                 </td>
                                 <td>{{ $duration($schedule->time_start, $schedule->time_end) }}</td>
+                                <td>
+                                    @php $window = $schedule->markingWindow($today); @endphp
+                                    <span class="font-mono text-stone-700 tabular-nums">
+                                        {{ $window['opens']->format('H:i') }} – {{ $window['closes']->format('H:i') }}
+                                    </span>
+                                    <span class="block text-[11px] text-stone-500">
+                                        Puntual hasta las {{ $window['grace']->format('H:i') }}
+                                    </span>
+                                </td>
                                 <td><span class="text-stone-500">{{ $schedule->description ?: '—' }}</span></td>
                                 <td class="text-right tabular-nums">{{ $schedule->schedulings_count }}</td>
                                 <td>
@@ -79,10 +95,26 @@
                                 </td>
                             </tr>
                         @empty
-                            <x-empty-row colspan="6" message="Todavía no hay turnos definidos" />
+                            <x-empty-row colspan="7" message="Todavía no hay turnos definidos" />
                         @endforelse
                     </tbody>
                 </table>
+            </div>
+
+            <div class="flex items-start gap-2.5 border-t border-stone-200 bg-stone-50 px-4 py-3 text-[12px] text-stone-600">
+                <x-lucide-info class="mt-0.5 size-4 shrink-0 text-stone-400" />
+                <div class="space-y-1">
+                    <p class="font-medium text-stone-700">¿Cómo se define el horario de marcación?</p>
+                    <p>
+                        Se calcula a partir de la <strong>hora de inicio</strong> del turno: la marcación abre
+                        {{ $opensBefore }} min antes, se registra como <strong>presente</strong> hasta {{ $graceAfter }} min
+                        después, como <strong>tarde</strong> pasado ese margen, y cierra {{ $closesAfter / 60 }} horas después del inicio.
+                    </p>
+                    <p>
+                        Para cambiar el horario de marcación, edita la <strong>hora de inicio</strong> del turno
+                        (<x-lucide-pencil class="inline size-3 align-[-1px]" />). La hora de fin no afecta la marcación.
+                    </p>
+                </div>
             </div>
         </x-card>
 
@@ -101,6 +133,21 @@
                         :class="error('time_end') && 'field-error'">
                 </x-field>
             </div>
+            <p x-show="form.time_start" x-data="{
+                at(minutes) {
+                    const [h, m] = form.time_start.split(':').map(Number);
+                    const total = (h * 60 + m + minutes + 1440) % 1440;
+                    return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+                },
+            }" class="flex items-start gap-2 rounded-md border border-stone-200 bg-stone-50 px-3 py-2.5 text-[12px] text-stone-600">
+                <x-lucide-info class="mt-0.5 size-3.5 shrink-0 text-stone-400" />
+                <span>
+                    Con esta hora de inicio, el personal podrá marcar asistencia de
+                    <strong class="font-mono" x-text="at(-{{ $opensBefore }})"></strong> a
+                    <strong class="font-mono" x-text="at({{ $closesAfter }})"></strong>
+                    (puntual hasta las <strong class="font-mono" x-text="at({{ $graceAfter }})"></strong>).
+                </span>
+            </p>
             <x-field label="Descripción" name="description" live>
                 <input id="description" name="description" x-model="form.description" maxlength="255" class="field"
                     :class="error('description') && 'field-error'">
