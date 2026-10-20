@@ -110,11 +110,20 @@ class Contract extends Model
         return in_array($this->type, self::PERMANENT_TYPES, true);
     }
 
-    /** Genera el correlativo CON-AAAA-NNN que muestra W09. */
+    /**
+     * Genera el correlativo CON-AAAA-NNN que muestra W09: el mayor número
+     * usado en ese año, más uno. Contar los contratos del año repetía códigos
+     * cuando había huecos (contratos eliminados o numerados por el seeder).
+     */
     public static function nextCode(int $year): string
     {
-        $count = static::whereYear('start_date', $year)->count() + 1;
+        $prefix = "CON-{$year}-";
 
-        return sprintf('CON-%d-%03d', $year, $count);
+        $last = static::where('code', 'like', $prefix.'%')
+            ->pluck('code')
+            ->map(fn (string $code) => (int) substr($code, strlen($prefix)))
+            ->max() ?? 0;
+
+        return sprintf('%s%03d', $prefix, $last + 1);
     }
 }
