@@ -95,6 +95,7 @@ del API (`app/Http/Controllers/Api`).
 DNI_LOOKUP_DRIVER=consultasapi   # consultasapi | null (desactivado)
 DNI_LOOKUP_TOKEN=
 DNI_LOOKUP_API_KEY=
+DNI_LOOKUP_TIMEOUT=8             # segundos antes de rendirse
 ```
 
 Ojo: **solo devuelve apellidos y nombres** — ni correo, ni teléfono, ni licencia.

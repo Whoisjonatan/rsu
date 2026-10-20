@@ -38,7 +38,7 @@ class ConsultasApiLookup implements DniLookup
                 ->timeout($this->timeout)
                 ->get(self::BASE."/{$dni}/{$this->token}");
         } catch (Throwable $e) {
-            Log::warning('Consulta de DNI fallida', ['dni' => $dni, 'error' => $e->getMessage()]);
+            Log::warning('Consulta de DNI fallida', ['dni' => $dni, 'error' => $this->redact($e->getMessage())]);
 
             throw new DniLookupFailed(
                 'El servicio de consulta no responde. Escribe los datos a mano.'
@@ -83,6 +83,15 @@ class ConsultasApiLookup implements DniLookup
         }
 
         return new DniPerson(dni: $dni, name: $name, lastname: $lastname);
+    }
+
+    /**
+     * Los errores de conexión traen la URL completa, y el token va en la ruta:
+     * se tapa antes de escribirlo en el log, junto con la llave por si acaso.
+     */
+    private function redact(string $message): string
+    {
+        return str_replace(array_filter([$this->token, $this->apiKey]), '[oculto]', $message);
     }
 
     /** RENIEC devuelve todo en mayúsculas; la ficha se ve mejor capitalizada. */
