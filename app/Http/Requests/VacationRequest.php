@@ -7,11 +7,12 @@ use App\Models\Vacation;
 use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 /**
- * Período de vacaciones (W10), con las reglas del informe: solo personal
- * nombrado o permanente, máximo 30 días por año y sin cruces.
+ * Solicitud de vacaciones (W10), con las reglas del informe: solo personal
+ * nombrado o permanente, máximo 30 días por año y sin cruces. El estado no
+ * viene en la petición: toda solicitud entra pendiente y se aprueba o
+ * rechaza aparte.
  */
 class VacationRequest extends FormRequest
 {
@@ -30,7 +31,7 @@ class VacationRequest extends FormRequest
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'days' => ['nullable', 'integer', 'min:1', 'max:'.Vacation::MAX_DAYS_PER_YEAR],
-            'status' => ['nullable', Rule::in(['programadas', 'gozadas', 'canceladas'])],
+            'notes' => ['nullable', 'string', 'max:500'],
         ];
     }
 
@@ -49,7 +50,7 @@ class VacationRequest extends FormRequest
 
     /**
      * Lo validado, con los días calculados del rango si no vinieron (ambos
-     * extremos incluidos) y el estado por defecto.
+     * extremos incluidos).
      *
      * @return array<string, mixed>
      */
@@ -57,7 +58,6 @@ class VacationRequest extends FormRequest
     {
         $data = $this->validated();
         $data['days'] = $this->requestedDays();
-        $data['status'] ??= 'programadas';
 
         return $data;
     }
@@ -82,25 +82,25 @@ class VacationRequest extends FormRequest
             return ['year' => 'Solo el personal nombrado o con contrato permanente puede registrar vacaciones.'];
         }
 
-        // "Máximo 30 días por año".
-        $pending = Vacation::pendingDays($person->id, (int) $this->input('year'), $ignoreId);
+        // "Máximo 30 días por año", contando también lo que espera aprobación.
+        $available = Vacation::pendingDays($person->id, (int) $this->input('year'), $ignoreId);
 
-        if ($this->requestedDays() > $pending) {
-            return ['days' => $pending === 0
-                ? 'No quedan días pendientes en ese período.'
-                : "Solo quedan {$pending} días pendientes en ese período."];
+        if ($this->requestedDays() > $available) {
+            return ['days' => $available === 0
+                ? 'No quedan días disponibles en ese período.'
+                : "Solo quedan {$available} días disponibles en ese período."];
         }
 
-        // Dos períodos de vacaciones no pueden solaparse.
+        // No puede cruzarse con otra solicitud pendiente ni con vacaciones aprobadas.
         $overlapping = $person->vacations()
             ->when($ignoreId, fn ($q) => $q->whereKeyNot($ignoreId))
-            ->where('status', '!=', 'canceladas')
+            ->whereIn('status', Vacation::COMMITTED_STATUSES)
             ->where('start_date', '<=', $this->input('end_date'))
             ->where('end_date', '>=', $this->input('start_date'))
             ->exists();
 
         if ($overlapping) {
-            return ['start_date' => 'Ya hay vacaciones registradas que se cruzan con estas fechas.'];
+            return ['start_date' => 'Ya hay vacaciones pendientes o aprobadas que se cruzan con estas fechas.'];
         }
 
         return [];

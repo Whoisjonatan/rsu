@@ -64,6 +64,7 @@ class PersonController extends Controller
     {
         $tab = in_array($request->query('tab'), ['contratos', 'vacaciones'], true) ? $request->query('tab') : 'datos';
         $year = $request->integer('year', (int) now()->year);
+        Vacation::closeFinished($person->id);
 
         return view('people.form', [
             'person' => $person->load('usertype'),

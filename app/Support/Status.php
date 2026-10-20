@@ -38,9 +38,11 @@ class Status
             'eventual' => ['Eventual', 'amber'],
         ],
         'vacation' => [
-            'programadas' => ['Programadas', 'blue'],
-            'gozadas' => ['Gozadas', 'slate'],
-            'canceladas' => ['Canceladas', 'amber'],
+            'pendientes' => ['Pendiente', 'amber'],
+            'programadas' => ['Programada', 'blue'],
+            'gozadas' => ['Gozada', 'slate'],
+            'rechazadas' => ['Rechazada', 'red'],
+            'canceladas' => ['Cancelada', 'slate'],
         ],
         'attendance' => [
             'presente' => ['Presente', 'green'],

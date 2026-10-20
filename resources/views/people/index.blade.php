@@ -108,6 +108,10 @@
                                             title="Contratos" aria-label="Contratos de {{ $person->full_name }}">
                                             <x-lucide-file-text class="size-3.5" />
                                         </a>
+                                        <a href="{{ route('people.edit', [$person, 'tab' => 'vacaciones']) }}" class="icon-btn"
+                                            title="Vacaciones" aria-label="Vacaciones de {{ $person->full_name }}">
+                                            <x-lucide-tree-palm class="size-3.5" />
+                                        </a>
                                         <a href="{{ route('people.edit', $person) }}" class="icon-btn" title="Editar"
                                             aria-label="Editar {{ $person->full_name }}">
                                             <x-lucide-pencil class="size-3.5" />

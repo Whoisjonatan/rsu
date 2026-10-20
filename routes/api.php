@@ -87,6 +87,8 @@ Route::name('api.')->group(function () {
         Route::apiResource('people.vacations', VacationController::class)
             ->parameters(['people' => 'person'])
             ->except('show');
+        Route::patch('people/{person}/vacations/{vacation}/approve', [VacationController::class, 'approve']);
+        Route::patch('people/{person}/vacations/{vacation}/reject', [VacationController::class, 'reject']);
 
         // Zonas (W13), su perimetro (W14) y sus rutas (W15)
         Route::apiResource('zones', ZoneController::class);

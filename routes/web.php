@@ -98,6 +98,8 @@ Route::middleware('auth')->group(function () {
 
     Route::post('personal/{person}/vacaciones', [VacationController::class, 'store'])->name('vacations.store');
     Route::put('personal/{person}/vacaciones/{vacation}', [VacationController::class, 'update'])->name('vacations.update');
+    Route::patch('personal/{person}/vacaciones/{vacation}/aprobar', [VacationController::class, 'approve'])->name('vacations.approve');
+    Route::patch('personal/{person}/vacaciones/{vacation}/rechazar', [VacationController::class, 'reject'])->name('vacations.reject');
     Route::delete('personal/{person}/vacaciones/{vacation}', [VacationController::class, 'destroy'])->name('vacations.destroy');
 
     // Reporte de asistencias (W12).
