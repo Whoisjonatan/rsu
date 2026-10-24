@@ -61,10 +61,16 @@ class Status
             'tarde' => ['Tardanza', 'amber'],
             'falta' => ['Ausente', 'red'],
         ],
-        // Ruta (catálogo de W15) y programación maestra (W17).
+        // Ruta (catálogo de W15); también lo que se elige a mano en una programación.
         'active' => [
             'activa' => ['Activa', 'green'],
             'inactiva' => ['Inactiva', 'slate'],
+        ],
+        // Programación maestra (W17). "Finalizada" la pone el sistema o el botón Finalizar.
+        'scheduling' => [
+            'activa' => ['Activa', 'green'],
+            'inactiva' => ['Inactiva', 'slate'],
+            'finalizada' => ['Finalizada', 'blue'],
         ],
     ];
 

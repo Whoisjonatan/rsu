@@ -154,6 +154,7 @@ Route::middleware('auth')->group(function () {
     Route::get('programacion/{scheduling}', [SchedulingController::class, 'edit'])->whereNumber('scheduling')->name('schedulings.edit');
     Route::put('programacion/{scheduling}', [SchedulingController::class, 'update'])->whereNumber('scheduling')->name('schedulings.update');
     Route::delete('programacion/{scheduling}', [SchedulingController::class, 'destroy'])->whereNumber('scheduling')->name('schedulings.destroy');
+    Route::patch('programacion/{scheduling}/finalizar', [SchedulingController::class, 'finish'])->whereNumber('scheduling')->name('schedulings.finish');
 
     // Maestros se separó en dos módulos; las direcciones viejas siguen funcionando.
     Route::redirect('maestros', '/vehiculos/catalogos');

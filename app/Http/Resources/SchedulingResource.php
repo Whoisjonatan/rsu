@@ -71,6 +71,8 @@ class SchedulingResource extends JsonResource
             'start_date' => $this->start_date?->toDateString(),
             'end_date' => $this->end_date?->toDateString(),
             'status' => $this->status,
+            'staffgroup_id' => $this->staffgroup_id,
+            'notes' => $this->notes,
             // Cuantos recorridos genera y cuantos ya arrancaron: es lo que W17
             // muestra en la fila sin tener que abrir la programacion.
             'routes_count' => $this->whenCounted('vehicleRoutes'),

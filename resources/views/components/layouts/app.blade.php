@@ -23,7 +23,7 @@
         ]],
         ['Gestión de zonas', [
             ['/zonas', 'Zonas', 'map'],
-            ['/rutas', 'Rutas', 'route'],
+            // Rutas (/rutas) queda oculto: por ahora no se programa por ruta.
         ]],
         ['Programación', [
             ['/programacion', 'Programación', 'calendar-days'],

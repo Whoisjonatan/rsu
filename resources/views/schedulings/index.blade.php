@@ -13,6 +13,7 @@
         'sin_recorrido' => ['Sin recorrido', 'amber'],
         'feriado' => ['Feriado', 'blue'],
         'no_aplica' => ['No aplica', 'slate'],
+        'finalizada' => ['Finalizada', 'blue'],
     ];
 
     /** Las cuatro que el informe exige y el sistema aplica al guardar. */
@@ -20,7 +21,7 @@
         'Personal contratado' => 'Solo se puede programar personal con contrato vigente en todas las fechas.',
         'Sin vacaciones' => 'No se puede programar personal con vacaciones dentro del rango de fechas.',
         'Sin duplicidad' => 'No se admiten dos programaciones que coincidan en turno, vehículo, conductor o ayudante.',
-        'Precarga por zona' => 'Al elegir la zona se precargan el vehículo, el personal y el turno habituales.',
+        'Precarga por grupo' => 'Al elegir el grupo de personal se cargan la zona, el turno, el vehículo, los días y la tripulación. Antes de guardar hay que validar la disponibilidad.',
     ];
 
     $plural = fn (int $count, string $one, string $many) => $count.' '.($count === 1 ? $one : $many);
@@ -53,10 +54,11 @@
                 <x-lucide-calendar-days class="size-4" />
                 Calendario
             </a>
-            <a href="{{ route('schedulings.bulk') }}" class="btn btn-secondary">
+            {{-- Deshabilitado hasta rehacerla como alta de varias programaciones a la vez. --}}
+            <button type="button" class="btn btn-secondary" disabled title="Próximamente">
                 <x-lucide-layers class="size-4" />
-                Edición masiva
-            </a>
+                Programación masiva
+            </button>
             <a href="{{ route('schedulings.create') }}" class="btn btn-primary">
                 <x-lucide-plus class="size-4" />
                 Programar
@@ -66,7 +68,9 @@
 
     <div x-data="{
         toDelete: null,
+        toFinish: null,
         get deleteAction() { return this.toDelete ? @js(route('schedulings.destroy', '__ID__')).replace('__ID__', this.toDelete.id) : '' },
+        get finishAction() { return this.toFinish ? @js(route('schedulings.finish', '__ID__')).replace('__ID__', this.toFinish.id) : '' },
     }">
         <x-card>
             <form method="GET" class="flex flex-wrap items-center gap-2 border-b border-stone-200 p-3" x-data
@@ -85,7 +89,7 @@
                 </select>
                 <select name="status" class="field w-auto min-w-40" aria-label="Filtrar por estado">
                     <option value="">Estado: todos</option>
-                    @foreach (Status::options('active') as $value => $label)
+                    @foreach (Status::options('scheduling') as $value => $label)
                         <option value="{{ $value }}" @selected($filters['status'] === $value)>{{ $label }}</option>
                     @endforeach
                 </select>
@@ -102,7 +106,7 @@
                         <tr>
                             <th>Código</th>
                             <th>Zona</th>
-                            <th>Ruta</th>
+                            <th>Fecha</th>
                             <th>Vehículo</th>
                             <th>Conductor</th>
                             <th>Ayudantes</th>
@@ -116,12 +120,9 @@
                             <tr>
                                 <td><span class="font-mono font-medium text-stone-900">{{ $row->code }}</span></td>
                                 <td>{{ $row->zone?->name ?? '—' }}</td>
-                                <td>
-                                    @if ($row->route)
-                                        {{ $row->route->name }}
-                                    @else
-                                        <em class="text-stone-400">Sin ruta</em>
-                                    @endif
+                                <td class="whitespace-nowrap">
+                                    {{ $row->start_date->format('d/m/Y') }}
+                                    <span class="mt-0.5 block text-[11px] text-stone-400">al {{ $row->end_date->format('d/m/Y') }}</span>
                                 </td>
                                 <td><span class="font-mono">{{ $row->vehicle?->plate ?? '—' }}</span></td>
                                 <td>{{ $row->driver?->full_name ?? '—' }}</td>
@@ -144,15 +145,25 @@
                                             <x-badge :tone="$dayStatus[$row->day_status][1]">{{ $dayStatus[$row->day_status][0] }}</x-badge>
                                         </span>
                                     @else
-                                        <x-badge :tone="Status::tone('active', $row->status)">{{ Status::label('active', $row->status) }}</x-badge>
+                                        <x-badge :tone="Status::tone('scheduling', $row->status)">{{ Status::label('scheduling', $row->status) }}</x-badge>
                                     @endif
                                 </td>
                                 <td>
                                     <div class="flex justify-end gap-1">
-                                        <a href="{{ route('schedulings.edit', $row) }}" class="icon-btn" title="Editar"
-                                            aria-label="Editar {{ $row->code }}">
-                                            <x-lucide-pencil class="size-3.5" />
-                                        </a>
+                                        {{-- Una finalizada es historia: ya no se edita. --}}
+                                        @unless ($row->isFinished())
+                                            <a href="{{ route('schedulings.edit', $row) }}" class="icon-btn" title="Editar"
+                                                aria-label="Editar {{ $row->code }}">
+                                                <x-lucide-pencil class="size-3.5" />
+                                            </a>
+                                        @endunless
+                                        @unless ($row->finishBlocker())
+                                            <button type="button" class="icon-btn" title="Finalizar"
+                                                aria-label="Finalizar {{ $row->code }}"
+                                                @click="toFinish = @js(['id' => $row->id, 'label' => $row->code, 'early' => $row->end_date->isAfter(today())])">
+                                                <x-lucide-flag class="size-3.5" />
+                                            </button>
+                                        @endunless
                                         <button type="button" class="icon-btn icon-btn-danger" title="Eliminar"
                                             aria-label="Eliminar {{ $row->code }}"
                                             @click="toDelete = @js(['id' => $row->id, 'label' => $row->code])">
@@ -197,6 +208,30 @@
                 @endforeach
             </div>
         </x-card>
+
+        <x-modal show="toFinish" close="toFinish = null" size="sm" title="Finalizar programación" description-expr="toFinish?.label">
+            <form method="POST" :action="finishAction">
+                @csrf
+                @method('PATCH')
+                <x-modal.body>
+                    <p class="text-[13px] text-stone-600" x-show="toFinish?.early">
+                        Termina hoy: la fecha de término pasa a hoy y se retiran los recorridos de mañana en adelante
+                        que no hayan iniciado. El vehículo y el personal quedan libres para otras programaciones.
+                    </p>
+                    <p class="text-[13px] text-stone-600" x-show="!toFinish?.early">
+                        Pasa a finalizada. El vehículo y el personal quedan libres para otras programaciones.
+                    </p>
+                    <p class="mt-2 text-[12px] text-stone-500">Una programación finalizada ya no se puede editar.</p>
+                </x-modal.body>
+                <x-modal.footer>
+                    <button type="button" class="btn btn-secondary" @click="toFinish = null">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">
+                        <x-lucide-flag class="size-4" />
+                        Finalizar
+                    </button>
+                </x-modal.footer>
+            </form>
+        </x-modal>
 
         <x-confirm-delete title="Eliminar programación">
             Se eliminarán también los recorridos que todavía no hayan iniciado. Los recorridos ya iniciados impiden el

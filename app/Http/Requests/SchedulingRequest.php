@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Services\Scheduling\SchedulingRules;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Alta y edicion de una programacion (W18).
@@ -24,7 +25,16 @@ class SchedulingRequest extends FormRequest
      */
     public function rules(): array
     {
-        return SchedulingRules::rules();
+        $rules = SchedulingRules::rules();
+
+        // Una programación nueva sale siempre de un grupo de personal activo:
+        // de él vienen la zona, el turno y el vehículo. Las anteriores a los
+        // grupos se siguen pudiendo editar sin uno.
+        if (! $this->route('scheduling')) {
+            $rules['staffgroup_id'] = ['required', Rule::exists('staffgroups', 'id')->where('status', 'activo')];
+        }
+
+        return $rules;
     }
 
     /**
@@ -32,7 +42,11 @@ class SchedulingRequest extends FormRequest
      */
     public function messages(): array
     {
-        return SchedulingRules::messages();
+        return [
+            ...SchedulingRules::messages(),
+            'staffgroup_id.required' => 'Elige un grupo de personal.',
+            'staffgroup_id.exists' => 'El grupo de personal no existe o no está activo.',
+        ];
     }
 
     protected function prepareForValidation(): void
@@ -48,6 +62,14 @@ class SchedulingRequest extends FormRequest
 
     public function withValidator(Validator $validator): void
     {
+        // Lo que terminó es historia, como las vacaciones gozadas.
+        if ($this->route('scheduling')?->isFinished()) {
+            $validator->after(fn (Validator $validator) => $validator->errors()
+                ->add('status', 'La programación ya finalizó: no se puede editar.'));
+
+            return;
+        }
+
         // Al editar, la programacion no debe chocar consigo misma.
         SchedulingRules::attachBusinessRules($validator, $this->route('scheduling')?->id);
     }

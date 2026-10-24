@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Web;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SchedulingRequest;
 use App\Models\Holiday;
-use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\Scheduling;
 use App\Models\StaffGroup;
@@ -20,7 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
- * Programación (W17, W18), edición masiva (W19) y calendario semanal (W20).
+ * Programación (W17, W18), programación masiva (W19) y calendario semanal (W20).
  *
  * Guardar una programación escribe la regla maestra y genera los recorridos
  * de cada día (ver Scheduling::saveAndSync). Las partes en vivo de estas
@@ -32,6 +31,8 @@ class SchedulingController extends Controller
     /** W17 Listado de programaciones. */
     public function index(Request $request): View
     {
+        Scheduling::closeFinished();
+
         // La fecha hace dos cosas: acota a las vigentes ese día y decide de
         // qué día se muestra el estado. Llega marcada con hoy; vaciarla
         // enseña todas.
@@ -86,8 +87,12 @@ class SchedulingController extends Controller
     }
 
     /** W18 Edición individual. */
-    public function edit(Scheduling $scheduling): View
+    public function edit(Scheduling $scheduling): View|RedirectResponse
     {
+        if ($scheduling->isFinished()) {
+            return redirect()->route('schedulings.index')->with('error', "La programación {$scheduling->code} ya finalizó: no se puede editar.");
+        }
+
         return view('schedulings.form', ['scheduling' => $scheduling, ...$this->formData($scheduling)]);
     }
 
@@ -109,8 +114,20 @@ class SchedulingController extends Controller
         return back()->with('success', "Programación {$scheduling->code} eliminada.");
     }
 
+    /** Finalizar a mano, antes de su fecha de término. */
+    public function finish(Scheduling $scheduling): RedirectResponse
+    {
+        if ($blocker = $scheduling->finishBlocker()) {
+            return back()->with('error', $blocker);
+        }
+
+        $scheduling->finish();
+
+        return back()->with('success', "Programación {$scheduling->code} finalizada.");
+    }
+
     /**
-     * W19 Edición masiva. La lista va completa (sin paginar): para elegir a
+     * W19 Programación masiva. La lista va completa (sin paginar): para elegir a
      * mano hay que ver todas las de la zona. Aplicar los cambios va al API,
      * que valida fila a fila y devuelve qué se aplicó y qué no.
      */
@@ -175,10 +192,21 @@ class SchedulingController extends Controller
      */
     private function formData(?Scheduling $current = null): array
     {
+        // Zona, turno y vehículo salen del grupo de personal, así que los
+        // catálogos conservan los de cada grupo aunque ya no se ofrecerían
+        // (zona inactiva, vehículo en taller): la ficha del grupo los nombra y
+        // la validación dice por qué no se puede programar. Al editar se
+        // conserva además el grupo de la programación aunque esté inactivo.
+        $groups = StaffGroup::with('helpers:id')
+            ->where(fn ($q) => $q->active()->when($current?->staffgroup_id, fn ($q) => $q->orWhere('id', $current->staffgroup_id)))
+            ->orderBy('name')
+            ->get();
+
         // Solo entra quien tiene un contrato vigente o por empezar: es el contrato
         // el que habilita a programar a alguien. La fecha exacta la sigue validando
         // SchedulingRules, porque la programación puede caer fuera del contrato.
-        // Al editar, cada combo conserva a su titular aunque ya no cumpla.
+        // Al editar, cada combo conserva a su titular aunque ya no cumpla, y la
+        // tripulación de los grupos se conserva porque es la que se precarga.
         $today = now()->toDateString();
         $staff = fn (string $slug, array $keep) => User::query()
             ->where(fn ($q) => $q
@@ -189,27 +217,22 @@ class SchedulingController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'lastname', 'dni']);
 
+        $keep = fn (iterable $ids) => collect($ids)->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+        $vehicleIds = $keep($groups->pluck('vehicle_id')->push($current?->vehicle_id));
+
         return [
-            // Solo las activas; al editar se conserva la zona de la programación.
-            'zones' => Zone::selectable([$current?->zone_id])->orderBy('name')->get(['id', 'name']),
-            'routes' => Route::with('zones:id')->orderBy('name')->get(['id', 'name', 'status'])
-                ->map(fn (Route $route) => [
-                    'id' => $route->id,
-                    'name' => $route->name,
-                    'status' => $route->status,
-                    'zone_ids' => $route->zones->pluck('id'),
-                ]),
+            // Solo las activas, más las de los grupos y la de la programación.
+            'zones' => Zone::selectable($groups->pluck('zone_id')->push($current?->zone_id))->orderBy('name')->get(['id', 'name']),
             'schedules' => Schedule::orderBy('time_start')->get(),
-            // Solo los operativos; al editar se mantiene el asignado aunque ya
-            // no lo esté, para que el combo no lo pierda.
+            // Solo los operativos, más los de los grupos y el de la programación.
             'vehicles' => Vehicle::with(['brand', 'model', 'type'])
-                ->where(fn ($q) => $q->operational()->when($current, fn ($q) => $q->orWhere('id', $current->vehicle_id)))
+                ->where(fn ($q) => $q->operational()->when($vehicleIds !== [], fn ($q) => $q->orWhereIn('id', $vehicleIds)))
                 ->orderBy('code')
                 ->get(),
-            'drivers' => $staff(UserType::DRIVER, array_filter([$current?->driver_id])),
-            'helpers' => $staff(UserType::HELPER, $current?->helperIds() ?? []),
-            // Plantillas para precargar todo salvo las fechas (solo en el alta).
-            'groups' => $current ? collect() : StaffGroup::with('helpers:id')->active()->orderBy('name')->get(),
+            'drivers' => $staff(UserType::DRIVER, $keep($groups->pluck('driver_id')->push($current?->driver_id))),
+            'helpers' => $staff(UserType::HELPER, $keep($groups->flatMap->helperIds()->concat($current?->helperIds() ?? []))),
+            // Plantillas que precargan todo salvo las fechas.
+            'groups' => $groups,
         ];
     }
 }

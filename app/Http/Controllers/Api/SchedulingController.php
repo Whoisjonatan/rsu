@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SchedulingRequest;
 use App\Http\Resources\SchedulingResource;
+use App\Models\Holiday;
 use App\Models\Scheduling;
 use App\Models\User;
 use App\Models\UserType;
@@ -28,6 +29,8 @@ class SchedulingController extends Controller
 
     public function index(Request $request): AnonymousResourceCollection
     {
+        Scheduling::closeFinished();
+
         $schedulings = Scheduling::query()
             ->with(self::RELATIONS)
             ->withCount('vehicleRoutes')
@@ -79,6 +82,18 @@ class SchedulingController extends Controller
         return response()->json(null, 204);
     }
 
+    /** Finalizar a mano, antes de su fecha de término (ver Scheduling::finish). */
+    public function finish(Scheduling $scheduling): JsonResponse|SchedulingResource
+    {
+        if ($blocker = $scheduling->finishBlocker()) {
+            return response()->json(['message' => $blocker], 409);
+        }
+
+        $scheduling->finish();
+
+        return new SchedulingResource($scheduling->load(self::RELATIONS)->loadCount('vehicleRoutes'));
+    }
+
     /**
      * Valida sin guardar: es la checklist viva del panel derecho de W18, que
      * se actualiza mientras el usuario elige y no al pulsar "Programar".
@@ -127,7 +142,37 @@ class SchedulingController extends Controller
             'errors' => $errors->toArray(),
             // "Generará N recorridos": ayuda a entender el rango antes de guardar.
             'occurrences' => count(SchedulingRules::occurrenceDates($data)),
+            // Los feriados que caen en un día marcado: explican por qué salen menos recorridos.
+            'holidays' => $this->holidaysSkipped($data),
         ]);
+    }
+
+    /**
+     * Feriados activos del rango que caen en uno de los días marcados. Esos
+     * días no llevan recorrido; el mismo día de la semana siguiente sí.
+     *
+     * @return list<array{date: string, description: string}>
+     */
+    private function holidaysSkipped(array $data): array
+    {
+        $weekdays = SchedulingRules::normalizeWeekdays($data['weekdays'] ?? null);
+
+        if ($weekdays === [] || blank($data['start_date'] ?? null) || blank($data['end_date'] ?? null)) {
+            return [];
+        }
+
+        return Holiday::active()
+            ->whereDate('date', '>=', $data['start_date'])
+            ->whereDate('date', '<=', $data['end_date'])
+            ->orderBy('date')
+            ->get()
+            ->filter(fn (Holiday $holiday) => in_array($holiday->date->dayOfWeekIso, $weekdays, true))
+            ->map(fn (Holiday $holiday) => [
+                'date' => $holiday->date->toDateString(),
+                'description' => $holiday->description,
+            ])
+            ->values()
+            ->all();
     }
 
     /**
@@ -165,6 +210,16 @@ class SchedulingController extends Controller
         $rechazadas = [];
 
         foreach (Scheduling::with('helpers')->findMany($data['ids']) as $scheduling) {
+            if ($scheduling->isFinished()) {
+                $rechazadas[] = [
+                    'id' => $scheduling->id,
+                    'code' => $scheduling->code,
+                    'errors' => ['La programación ya finalizó: no se puede editar.'],
+                ];
+
+                continue;
+            }
+
             $payload = array_merge($scheduling->only([
                 'zone_id', 'route_id', 'vehicle_id', 'schedule_id',
                 'driver_id', 'status',

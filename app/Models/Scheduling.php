@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\Scheduling\SchedulingRules;
+use App\Support\Sequence;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -70,6 +71,7 @@ class Scheduling extends Model
             // weekdays), que sea feriado o que sea pasado: no es lo mismo y la
             // fila lo dice.
             $scheduling->day_status = $route?->status
+                ?? ($scheduling->isFinished() ? 'finalizada' : null)
                 ?? (in_array($weekday, array_map('intval', $scheduling->weekdays ?? []), true)
                     ? ($isHoliday ? 'feriado' : 'sin_recorrido')
                     : 'no_aplica');
@@ -81,7 +83,7 @@ class Scheduling extends Model
     /**
      * Contadores de la barra superior de W17.
      *
-     * @return array{total: int, activas: int, vigentes: int, inactivas: int}
+     * @return array{total: int, activas: int, vigentes: int, inactivas: int, finalizadas: int}
      */
     public static function summary(): array
     {
@@ -95,6 +97,7 @@ class Scheduling extends Model
                 ->where('end_date', '>=', $today)
                 ->count(),
             'inactivas' => static::where('status', 'inactiva')->count(),
+            'finalizadas' => static::where('status', 'finalizada')->count(),
         ];
     }
 
@@ -145,7 +148,7 @@ class Scheduling extends Model
 
     protected $fillable = [
         'zone_id', 'staffgroup_id', 'route_id', 'vehicle_id', 'schedule_id',
-        'driver_id', 'weekdays', 'start_date', 'end_date', 'status',
+        'driver_id', 'weekdays', 'start_date', 'end_date', 'status', 'notes',
     ];
 
     /**
@@ -160,17 +163,78 @@ class Scheduling extends Model
         });
     }
 
-    /** Genera el correlativo PRG-NNNN que muestra W17. */
+    /**
+     * Genera el correlativo PRG-NNNN que muestra W17. Sale de un contador y no
+     * del mayor código existente: si no, eliminar la última programación
+     * dejaba su número libre y la siguiente lo repetía.
+     */
     public static function nextCode(): string
     {
-        $last = static::query()
+        // Se compara el número y no el texto: "PRG-10000" < "PRG-9999" como texto.
+        $highest = fn () => static::query()
             ->whereNotNull('code')
-            ->orderByDesc('code')
-            ->value('code');
+            ->pluck('code')
+            ->map(fn (string $code) => (int) substr($code, 4))
+            ->max() ?? 0;
 
-        $numero = $last ? (int) substr($last, 4) : 0;
+        return sprintf('PRG-%04d', Sequence::next('schedulings', $highest));
+    }
 
-        return sprintf('PRG-%04d', $numero + 1);
+    /**
+     * Pasa a "finalizada" las programaciones activas cuya fecha de término ya
+     * pasó. Se llama al mostrar el listado y una vez al día desde el
+     * scheduler, así el estado queda bien aunque el scheduler no esté corriendo.
+     */
+    public static function closeFinished(): int
+    {
+        return static::query()
+            ->where('status', 'activa')
+            ->whereDate('end_date', '<', now()->toDateString())
+            ->update(['status' => 'finalizada']);
+    }
+
+    public function isFinished(): bool
+    {
+        return $this->status === 'finalizada';
+    }
+
+    /** Por qué no se puede finalizar a mano, o null si se puede. */
+    public function finishBlocker(): ?string
+    {
+        if ($this->isFinished()) {
+            return "La programación {$this->code} ya está finalizada.";
+        }
+
+        if ($this->start_date->toDateString() > now()->toDateString()) {
+            return "La programación {$this->code} todavía no empieza: elimínala o déjala inactiva.";
+        }
+
+        return null;
+    }
+
+    /**
+     * Finaliza hoy. Si terminaba más adelante, la fecha de término pasa a hoy
+     * y se retiran los recorridos de mañana en adelante que no arrancaron; el
+     * de hoy se queda como esté. Al no estar activa, el vehículo y el personal
+     * quedan libres para otras programaciones.
+     */
+    public function finish(): void
+    {
+        $today = now()->toDateString();
+
+        DB::transaction(function () use ($today) {
+            if ($this->end_date->toDateString() > $today) {
+                $this->vehicleRoutes()
+                    ->where('status', 'programado')
+                    ->whereDate('date_route', '>', $today)
+                    ->delete();
+
+                $this->end_date = $today;
+            }
+
+            $this->status = 'finalizada';
+            $this->save();
+        });
     }
 
     protected function casts(): array

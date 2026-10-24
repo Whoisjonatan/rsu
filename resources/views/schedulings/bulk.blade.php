@@ -1,4 +1,4 @@
-{{-- W19 Edición masiva de programaciones. Estado y llamadas al API en resources/js/components/bulk-edit.js. --}}
+{{-- W19 Programación masiva. Estado y llamadas al API en resources/js/components/bulk-edit.js. --}}
 @php
     $fields = [
         'schedule_id' => ['Cambiar turno', $schedules->map(fn ($row) => [$row->id, $row->label])],
@@ -9,7 +9,7 @@
     ];
 @endphp
 
-<x-layouts.app title="Edición masiva" subtitle="Marca las programaciones que quieres cambiar">
+<x-layouts.app title="Programación masiva" subtitle="Marca las programaciones que quieres cambiar">
     <x-slot:actions>
         <a href="{{ route('schedulings.index') }}" class="btn btn-secondary">
             <x-lucide-arrow-left class="size-4" />

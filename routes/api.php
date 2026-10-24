@@ -118,6 +118,7 @@ Route::name('api.')->group(function () {
         Route::post('schedulings/validate', [SchedulingController::class, 'validateDraft']);
         // Edicion masiva (W19): mismos cambios a varias programaciones.
         Route::post('schedulings/bulk-update', [SchedulingController::class, 'bulkUpdate']);
+        Route::patch('schedulings/{scheduling}/finish', [SchedulingController::class, 'finish']);
         Route::apiResource('schedulings', SchedulingController::class);
 
         // Grupos de personal: disponibilidad en vivo para el formulario.

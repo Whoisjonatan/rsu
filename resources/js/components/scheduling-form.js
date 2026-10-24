@@ -14,52 +14,43 @@ function formatDate(iso) {
  * W18 Programación: el formulario se envía al servidor de forma normal; este
  * componente solo añade lo que tiene que pasar mientras se rellena.
  *
- * - Precarga por zona (validación 3 del informe): al elegir la zona, en el
- *   alta, se rellenan vehículo, personal y turno habituales si siguen vacíos.
- * - Checklist viva del panel derecho: valida contra el API sin guardar, con
- *   las mismas reglas que se aplicarán al pulsar "Programar".
+ * - El grupo de personal carga zona, turno, vehículo, días y tripulación; el
+ *   conductor y los ayudantes se pueden cambiar, el resto es del grupo.
+ * - "Validar disponibilidad" consulta el API sin guardar, con las mismas
+ *   reglas que se aplicarán al pulsar "Programar". No se puede programar sin
+ *   haber validado lo que hay en pantalla: cambiar algo obliga a validar otra vez.
  * - Resumen de lo elegido.
  */
 export default (config) => ({
     form: config.form,
     isNew: config.isNew,
     catalogs: config.catalogs,
-    precargada: null,
+    original: null,
     groupLoaded: null,
     validation: null,
-    timer: null,
+    validatedDraft: null,
+    outdated: false,
+    checking: false,
 
     init() {
+        this.original = JSON.parse(JSON.stringify(this.form));
         this.fitSeats();
         this.$watch('form.vehicle_id', () => this.fitSeats());
-
-        this.$watch('form.zone_id', (zoneId, previous) => {
-            // La ruta pertenece a una zona: al cambiarla deja de aplicar.
-            if (previous !== undefined && !this.zoneRoutes.some((route) => String(route.id) === String(this.form.route_id))) {
-                this.form.route_id = '';
-            }
-
-            // Con un grupo elegido ya está todo cargado: la precarga por zona sobra.
-            if (this.isNew && zoneId && !this.form.staffgroup_id) this.loadDefaults(zoneId);
-        });
 
         // Llegó desde Grupos de personal con ?grupo=ID.
         if (this.isNew && this.form.staffgroup_id && !this.form.driver_id) this.applyGroup(this.form.staffgroup_id);
 
-        // Se espera a que el usuario deje de elegir: cada consulta valida el
-        // rango completo de fechas.
+        // Lo validado deja de valer en cuanto cambia lo que decide la disponibilidad.
         this.$watch('form', () => {
-            clearTimeout(this.timer);
-            this.timer = setTimeout(() => this.validate(), 400);
+            if (this.validation && JSON.stringify(this.draft) !== this.validatedDraft) {
+                this.validation = null;
+                this.outdated = true;
+            }
         });
-
-        this.validate();
     },
 
-    get zoneRoutes() {
-        return this.catalogs.routes.filter((route) =>
-            route.zone_ids.map(String).includes(String(this.form.zone_id)),
-        );
+    get group() {
+        return this.catalogs.groups.find((item) => String(item.id) === String(this.form.staffgroup_id)) ?? null;
     },
 
     get vehicle() {
@@ -86,16 +77,22 @@ export default (config) => ({
         return this.catalogs.helpers.filter((person) => !taken.includes(String(person.id)));
     },
 
-    /** Copia el grupo en el formulario: todo salvo las fechas y el estado. */
+    /** Copia el grupo en el formulario: todo salvo las fechas, el estado y las observaciones. */
     applyGroup(id) {
         const group = this.catalogs.groups.find((item) => String(item.id) === String(id));
 
         if (!group) {
+            // Sin grupo no queda nada que programar en el alta; al editar se
+            // vuelve a lo que tenía la programación.
+            const { zone_id, schedule_id, vehicle_id, driver_id, helper_ids, weekdays } = this.isNew
+                ? { zone_id: '', schedule_id: '', vehicle_id: '', driver_id: '', helper_ids: [], weekdays: this.form.weekdays }
+                : this.original;
+            Object.assign(this.form, { zone_id, schedule_id, vehicle_id, driver_id, helper_ids: [...helper_ids], weekdays: [...weekdays] });
+            this.fitSeats();
             this.groupLoaded = null;
             return;
         }
 
-        this.precargada = null;
         this.form.staffgroup_id = String(group.id);
         this.form.zone_id = group.zone_id;
         this.form.schedule_id = group.schedule_id;
@@ -104,7 +101,7 @@ export default (config) => ({
         this.form.weekdays = [...group.weekdays];
         this.form.helper_ids = [...group.helper_ids];
         this.fitSeats();
-        this.groupLoaded = `Se cargó el grupo "${group.name}": indica la fecha de inicio y la de término.`;
+        this.groupLoaded = `Se cargó el grupo "${group.name}": indica las fechas y valida la disponibilidad.`;
     },
 
     toggleWeekday(day) {
@@ -113,75 +110,67 @@ export default (config) => ({
             : [...this.form.weekdays, day].sort((a, b) => a - b);
     },
 
-    async loadDefaults(zoneId) {
+    /** Lo que decide la disponibilidad; las observaciones no cuentan. */
+    get draft() {
+        const { notes, ...form } = this.form;
+        return { ...form, helper_ids: form.helper_ids.filter(Boolean), id: config.id };
+    },
+
+    /** Sin esto el API contestaría "elige una zona" en vez de validar la disponibilidad. */
+    get complete() {
+        const form = this.form;
+        return Boolean(form.zone_id && form.vehicle_id && form.schedule_id && form.driver_id
+            && form.start_date && form.end_date && form.weekdays.length > 0);
+    },
+
+    get canSave() {
+        return Boolean(this.validation?.valid);
+    },
+
+    get saveHint() {
+        if (!this.complete) return this.isNew ? 'Elige un grupo y las fechas.' : 'Completa el formulario.';
+        if (!this.validation) return 'Valida la disponibilidad para poder guardar.';
+        return this.validation.valid ? '' : 'Corrige lo marcado y vuelve a validar.';
+    },
+
+    async validate() {
+        if (!this.complete || this.checking) return;
+
+        const draft = this.draft;
+        this.checking = true;
+
         try {
-            const { data } = await api.get(`/schedulings/defaults/${zoneId}`);
-            // Solo los campos vacíos: no se pisa lo que el usuario eligió a mano.
-            const apply = (field) => {
-                if (data[field] && !this.form[field]) this.form[field] = String(data[field]);
-            };
-
-            ['vehicle_id', 'schedule_id', 'driver_id'].forEach(apply);
-
-            // Los ayudantes se acomodan en los asientos que da el vehículo.
-            const helpers = (data.helper_ids ?? []).map(String);
-            if (helpers.length && !this.form.helper_ids.some(Boolean)) {
-                this.$nextTick(() => {
-                    this.form.helper_ids = this.form.helper_ids.map((current, index) => helpers[index] ?? current);
-                });
-            }
-
-            // El aviso nombra solo lo que de verdad se rellenó: una zona sin
-            // programación previa no tiene vehículo ni turno habituales.
-            const loaded = [
-                data.vehicle_id ? 'vehículo' : null,
-                data.driver_id || helpers.length ? 'personal' : null,
-                data.schedule_id ? 'turno' : null,
-            ].filter(Boolean);
-
-            this.precargada = loaded.length ? loaded : null;
+            const { data } = await api.post('/schedulings/validate', draft);
+            this.validation = data;
+            this.validatedDraft = JSON.stringify(draft);
+            this.outdated = false;
         } catch {
-            this.precargada = null;
+            this.validation = null;
+        } finally {
+            this.checking = false;
         }
     },
 
-    get precargadaText() {
-        if (!this.precargada) return '';
-        const list = this.precargada.join(', ').replace(/, ([^,]*)$/, ' y $1');
-        return `Al elegir la zona se precargó ${list} ${this.precargada.length > 1 ? 'habituales' : 'habitual'}. Puedes cambiarlo.`;
-    },
-
-    /**
-     * Solo se consulta cuando el formulario tiene lo mínimo: sin eso el API
-     * contestaría "elige una zona" y la checklist parecería rota mientras se
-     * rellena.
-     */
-    async validate() {
-        const form = this.form;
-        const complete = form.zone_id && form.vehicle_id && form.schedule_id && form.driver_id
-            && form.start_date && form.end_date && form.weekdays.length > 0;
-
-        if (!complete) {
-            this.validation = null;
+    /** Enter en un campo también envía: sin validación vigente no sale. */
+    submit(event) {
+        if (!this.canSave) {
+            event.preventDefault();
             return;
         }
 
-        try {
-            const { data } = await api.post('/schedulings/validate', {
-                ...form,
-                helper_ids: form.helper_ids.filter(Boolean),
-                id: config.id,
-            });
-            this.validation = data;
-        } catch {
-            this.validation = null;
-        }
+        event.target.querySelector('[type=submit]').disabled = true;
     },
 
-    /** El aviso de vacaciones sale mientras se elige, no al guardar. */
-    get vacationWarning() {
-        const errors = this.validation?.errors ?? {};
-        return (errors.driver_id ?? []).concat(errors.helper_ids ?? []).find((text) => text.includes('vacaciones')) ?? null;
+    /** Los avisos de la validación, sin repetir. */
+    get messages() {
+        return [...new Set(Object.values(this.validation?.errors ?? {}).flat())];
+    },
+
+    /** "Lun 25/01/2027 · Feriado X". Fecha local armada a mano para no desfasar el día. */
+    holidayLabel(holiday) {
+        const [year, month, day] = holiday.date.split('-').map(Number);
+        const weekday = DAY_SHORT[(new Date(year, month - 1, day).getDay() + 6) % 7];
+        return `${weekday} ${formatDate(holiday.date)}${holiday.description ? ` · ${holiday.description}` : ''}`;
     },
 
     check(key) {
@@ -209,6 +198,7 @@ export default (config) => ({
 
     get summary() {
         return [
+            ['Grupo', this.group?.name ?? null],
             ['Zona', this.label('zones', this.form.zone_id)],
             ['Vehículo', this.label('vehicles', this.form.vehicle_id, 'plate')],
             ['Turno', this.label('schedules', this.form.schedule_id, 'label')],

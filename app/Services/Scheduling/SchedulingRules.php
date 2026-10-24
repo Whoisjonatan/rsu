@@ -48,6 +48,7 @@ class SchedulingRules
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'status' => ['required', Rule::in(['activa', 'inactiva'])],
+            'notes' => ['nullable', 'string', 'max:500'],
         ];
     }
 

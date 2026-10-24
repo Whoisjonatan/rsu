@@ -111,9 +111,7 @@
         </x-card>
 
         <p class="mt-4 text-[12px] text-stone-500">
-            El icono del mapa de cada fila abre el trazado de su perímetro, y al guardarlo se calcula el área. Las rutas
-            de las zonas se gestionan en
-            <a href="{{ route('routes.index') }}" class="font-medium text-brand-500 hover:text-brand-600">Rutas</a>.
+            El icono del mapa de cada fila abre el trazado de su perímetro, y al guardarlo se calcula el área.
         </p>
 
         {{-- Departamento → provincia → distrito: cada nivel filtra el siguiente. Solo se guarda el distrito. --}}
