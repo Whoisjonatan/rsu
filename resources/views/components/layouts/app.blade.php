@@ -28,6 +28,7 @@
         ['Programación', [
             ['/programacion', 'Programación', 'calendar-days'],
             ['/turnos', 'Turnos', 'clock'],
+            ['/feriados', 'Feriados', 'calendar-x'],
         ]],
     ];
 

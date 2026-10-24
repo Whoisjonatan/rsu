@@ -100,6 +100,15 @@ DNI_LOOKUP_TIMEOUT=8             # segundos antes de rendirse
 
 Ojo: **solo devuelve apellidos y nombres** — ni correo, ni teléfono, ni licencia.
 
+**Feriados del Perú.** "Cargar feriados Perú" los toma del calendario público de feriados de
+Google (iCalendar), que se actualiza solo cada año; la respuesta se guarda 12 horas. Si no
+responde, usa una lista interna con los feriados de ley. Se puede cambiar la fuente:
+
+```
+HOLIDAYS_FEED_URL=               # .ics de feriados; vacío = el de Google
+HOLIDAYS_FEED_TIMEOUT=8          # segundos antes de usar la lista interna
+```
+
 ## Documentación
 
 - **[`docs/GUIA-TECNICA.md`](docs/GUIA-TECNICA.md)** — cómo arrancar, el mapa del código,

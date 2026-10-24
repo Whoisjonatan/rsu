@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SchedulingRequest;
+use App\Models\Holiday;
 use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\Scheduling;
@@ -150,6 +151,11 @@ class SchedulingController extends Controller
         return view('schedulings.calendar', [
             'days' => $days,
             'routes' => $routes,
+            'holidays' => Holiday::active()
+                ->whereDate('date', '>=', $days->first()->toDateString())
+                ->whereDate('date', '<=', $days->last()->toDateString())
+                ->get()
+                ->keyBy(fn (Holiday $holiday) => $holiday->date->toDateString()),
             'filters' => $request->only(['zone_id', 'schedule_id']),
             'zones' => Zone::orderBy('name')->get(['id', 'name']),
             'schedules' => Schedule::orderBy('time_start')->get(),

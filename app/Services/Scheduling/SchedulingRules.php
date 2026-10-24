@@ -107,7 +107,7 @@ class SchedulingRules
             if ($dates === []) {
                 $validator->errors()->add(
                     'weekdays',
-                    'Los días elegidos no caen dentro del rango de fechas: la programación no tendría ningún recorrido.',
+                    'Los días elegidos no caen dentro del rango de fechas o son todos feriados: la programación no tendría ningún recorrido.',
                 );
 
                 return;

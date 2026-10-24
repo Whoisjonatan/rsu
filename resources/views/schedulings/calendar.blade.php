@@ -68,15 +68,25 @@
                 @foreach ($days as $day)
                     @php
                         $dayRoutes = $routes->get($day->toDateString(), collect());
+                        $holiday = $holidays->get($day->toDateString());
                     @endphp
                     <div class="min-w-0">
                         <div @class([
                             'mb-2 rounded-md px-2 py-1.5 text-center text-[12px] font-semibold',
                             'bg-brand-600 text-white' => $day->toDateString() === $today,
-                            'bg-stone-100 text-stone-600' => $day->toDateString() !== $today,
+                            'bg-sky-50 text-sky-700' => $day->toDateString() !== $today && $holiday,
+                            'bg-stone-100 text-stone-600' => $day->toDateString() !== $today && ! $holiday,
                         ])>
                             {{ \App\Models\Scheduling::WEEKDAY_LABELS[$day->dayOfWeekIso] }} {{ $day->day }}
                         </div>
+
+                        @if ($holiday)
+                            <p class="mb-2 flex items-center justify-center gap-1 truncate text-[11px] font-medium text-sky-700"
+                                title="{{ $holiday->description }}">
+                                <x-lucide-calendar-x class="size-3 shrink-0" />
+                                <span class="truncate">Feriado · {{ $holiday->description }}</span>
+                            </p>
+                        @endif
 
                         <div class="space-y-2">
                             @forelse ($dayRoutes as $route)
@@ -100,7 +110,7 @@
                                 </button>
                             @empty
                                 <p class="rounded-lg border border-dashed border-stone-200 px-2 py-6 text-center text-[11px] text-stone-400">
-                                    Sin programación
+                                    {{ $holiday ? 'Sin recorridos por feriado' : 'Sin programación' }}
                                 </p>
                             @endforelse
                         </div>

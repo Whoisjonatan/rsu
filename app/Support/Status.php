@@ -48,6 +48,10 @@ class Status
             'rechazadas' => ['Rechazada', 'red'],
             'canceladas' => ['Cancelada', 'slate'],
         ],
+        'holiday' => [
+            'activo' => ['Activo', 'green'],
+            'inactivo' => ['Inactivo', 'slate'],
+        ],
         'attendance' => [
             'presente' => ['Presente', 'green'],
             'tarde' => ['Tardanza', 'amber'],

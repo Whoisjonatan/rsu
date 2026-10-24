@@ -58,16 +58,18 @@ class Scheduling extends Model
             ->keyBy('scheduling_id');
 
         $weekday = (int) date('N', strtotime($date));
+        $isHoliday = Holiday::isHoliday($date);
 
         foreach ($schedulings as $scheduling) {
             $route = $routes->get($scheduling->id);
 
             $scheduling->day_route_id = $route?->id;
             // Sin recorrido ese día puede ser que ese día no toque (no está en
-            // weekdays) o que sea pasado: no es lo mismo y la fila lo dice.
+            // weekdays), que sea feriado o que sea pasado: no es lo mismo y la
+            // fila lo dice.
             $scheduling->day_status = $route?->status
                 ?? (in_array($weekday, array_map('intval', $scheduling->weekdays ?? []), true)
-                    ? 'sin_recorrido'
+                    ? ($isHoliday ? 'feriado' : 'sin_recorrido')
                     : 'no_aplica');
             $scheduling->day_block_reason = $route?->block_reason;
             $scheduling->vacation_conflicts = $scheduling->vacationConflicts($date);
@@ -209,16 +211,20 @@ class Scheduling extends Model
     }
 
     /**
-     * Fechas que cubre la programacion, solo en los dias de semana marcados.
+     * Fechas que cubre la programacion, solo en los dias de semana marcados y
+     * sin los feriados activos: un feriado no lleva recorrido, y por eso
+     * tampoco cuenta en las validaciones de contrato y vacaciones.
      *
      * @return list<string>
      */
     public function occurrenceDates(): array
     {
         $days = array_map('intval', $this->weekdays ?? []);
+        $holidays = Holiday::activeDatesBetween($this->start_date, $this->end_date);
 
         return collect(CarbonPeriod::create($this->start_date, $this->end_date))
             ->filter(fn ($date) => in_array($date->dayOfWeekIso, $days, true))
+            ->reject(fn ($date) => in_array($date->toDateString(), $holidays, true))
             ->map(fn ($date) => $date->toDateString())
             ->values()
             ->all();

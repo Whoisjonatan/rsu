@@ -5,6 +5,7 @@ use App\Http\Controllers\Web\AuthController;
 use App\Http\Controllers\Web\BrandController;
 use App\Http\Controllers\Web\BrandModelController;
 use App\Http\Controllers\Web\ContractController;
+use App\Http\Controllers\Web\HolidayController;
 use App\Http\Controllers\Web\HomeController;
 use App\Http\Controllers\Web\PersonController;
 use App\Http\Controllers\Web\RouteController;
@@ -124,6 +125,14 @@ Route::middleware('auth')->group(function () {
     Route::post('turnos', [ScheduleController::class, 'store'])->name('schedules.store');
     Route::put('turnos/{schedule}', [ScheduleController::class, 'update'])->name('schedules.update');
     Route::delete('turnos/{schedule}', [ScheduleController::class, 'destroy'])->name('schedules.destroy');
+
+    // Feriados: un feriado activo no lleva recorridos.
+    Route::get('feriados', [HolidayController::class, 'index'])->name('holidays.index');
+    Route::post('feriados', [HolidayController::class, 'store'])->name('holidays.store');
+    Route::get('feriados/peru', [HolidayController::class, 'previewPeru'])->name('holidays.peru.preview');
+    Route::post('feriados/peru', [HolidayController::class, 'loadPeru'])->name('holidays.peru');
+    Route::put('feriados/{holiday}', [HolidayController::class, 'update'])->name('holidays.update');
+    Route::delete('feriados/{holiday}', [HolidayController::class, 'destroy'])->name('holidays.destroy');
 
     // Programación (W17, W18), edición masiva (W19) y calendario semanal (W20).
     // El inicio de recorrido (W21) es un modal del calendario que trabaja

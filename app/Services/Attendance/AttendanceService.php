@@ -3,6 +3,7 @@
 namespace App\Services\Attendance;
 
 use App\Models\Attendance;
+use App\Models\Holiday;
 use App\Models\Schedule;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -114,6 +115,7 @@ class AttendanceService
 
         $rows = [];
         $today = CarbonImmutable::now()->startOfDay();
+        $holidays = Holiday::activeDatesBetween($from, $to);
 
         foreach (CarbonPeriod::create($from, $to) as $day) {
             $date = CarbonImmutable::parse($day);
@@ -126,7 +128,7 @@ class AttendanceService
             }
 
             // Solo cuentan como ausencia los días hábiles ya transcurridos.
-            if (! $this->isWorkingDay($date) || $date->greaterThan($today)) {
+            if (! $this->isWorkingDay($date, $holidays) || $date->greaterThan($today)) {
                 continue;
             }
 
@@ -166,6 +168,7 @@ class AttendanceService
             ->keyBy('user_id');
 
         $rows = [];
+        $holidays = Holiday::activeDatesBetween($date, $date);
 
         foreach ($people as $person) {
             $who = ['person' => ['id' => $person->id, 'full_name' => $person->full_name, 'dni' => $person->dni]];
@@ -181,7 +184,7 @@ class AttendanceService
                 continue;
             }
 
-            if (! $this->isWorkingDay($date) || $date->greaterThan($today)) {
+            if (! $this->isWorkingDay($date, $holidays) || $date->greaterThan($today)) {
                 continue;
             }
 
@@ -247,11 +250,14 @@ class AttendanceService
     }
 
     /**
-     * Día hábil: de lunes a sábado. Cuando exista el módulo de programación
-     * esto deberá salir de los días realmente programados a la persona.
+     * Día hábil: de lunes a sábado y que no sea feriado activo. Cuando exista
+     * el módulo de programación esto deberá salir de los días realmente
+     * programados a la persona.
+     *
+     * @param  list<string>  $holidays  Feriados activos del rango consultado.
      */
-    private function isWorkingDay(CarbonImmutable $date): bool
+    private function isWorkingDay(CarbonImmutable $date, array $holidays): bool
     {
-        return $date->dayOfWeekIso <= 6;
+        return $date->dayOfWeekIso <= 6 && ! in_array($date->toDateString(), $holidays, true);
     }
 }

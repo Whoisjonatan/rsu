@@ -11,6 +11,7 @@
         'bloqueado' => ['Bloqueado', 'red'],
         'finalizado' => ['Finalizado', 'blue'],
         'sin_recorrido' => ['Sin recorrido', 'amber'],
+        'feriado' => ['Feriado', 'blue'],
         'no_aplica' => ['No aplica', 'slate'],
     ];
 

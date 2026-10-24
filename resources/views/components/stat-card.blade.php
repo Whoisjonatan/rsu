@@ -1,5 +1,5 @@
 {{-- Indicador numérico del panel principal y de las cabeceras de cada módulo. --}}
-@props(['label', 'value', 'icon' => null, 'tone' => 'slate'])
+@props(['label', 'value', 'icon' => null, 'tone' => 'slate', 'hint' => null])
 
 @php
     $tones = [
@@ -15,6 +15,9 @@
         <div class="min-w-0">
             <p class="truncate text-[11px] font-semibold tracking-wide text-stone-500 uppercase">{{ $label }}</p>
             <p class="mt-2 text-3xl font-bold tracking-tight text-stone-900 tabular-nums">{{ $value }}</p>
+            @if ($hint)
+                <p class="mt-1 truncate text-[11px] text-stone-500" title="{{ $hint }}">{{ $hint }}</p>
+            @endif
         </div>
         @if ($icon)
             <span class="{{ $tones[$tone] }} grid size-9 shrink-0 place-items-center rounded-lg">
