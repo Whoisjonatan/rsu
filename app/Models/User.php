@@ -324,6 +324,10 @@ class User extends Authenticatable
             return 'No se puede eliminar: la persona tiene recorridos asignados.';
         }
 
+        if (StaffGroup::withMember($this->id)->exists()) {
+            return 'No se puede eliminar: la persona está en un grupo de personal.';
+        }
+
         if ($actor && $this->is($actor)) {
             return 'No puedes eliminar tu propio usuario.';
         }

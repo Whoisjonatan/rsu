@@ -111,6 +111,24 @@ class Vehicle extends Model
         return $query->where('status', 'operativo');
     }
 
+    /** Asientos para ayudantes: la capacidad de ocupantes menos el conductor. */
+    public function helperSeats(): int
+    {
+        return max(0, $this->occupant_capacity - 1);
+    }
+
+    /** "Capacidad: 3 · 1 conductor + 2 ayudantes", lo que muestran los selectores de vehículo. */
+    public function crewLabel(): string
+    {
+        $seats = $this->helperSeats();
+
+        return sprintf(
+            'Capacidad: %d · 1 conductor + %s',
+            $this->occupant_capacity,
+            $seats === 1 ? '1 ayudante' : "{$seats} ayudantes",
+        );
+    }
+
     /**
      * Busca por codigo, placa, nombre o modelo.
      */
@@ -159,6 +177,10 @@ class Vehicle extends Model
     {
         if ($this->schedulings()->exists() || $this->vehicleRoutes()->exists()) {
             return 'No se puede eliminar: el vehículo tiene programaciones o recorridos registrados.';
+        }
+
+        if (StaffGroup::where('vehicle_id', $this->id)->exists()) {
+            return 'No se puede eliminar: el vehículo está en un grupo de personal.';
         }
 
         return null;

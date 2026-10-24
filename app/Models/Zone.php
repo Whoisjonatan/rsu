@@ -73,8 +73,12 @@ class Zone extends Model
     /** Por qué no se puede eliminar, o null si se puede. */
     public function deletionBlocker(): ?string
     {
-        return $this->schedulings()->exists()
-            ? 'No se puede eliminar: la zona tiene programaciones registradas.'
+        if ($this->schedulings()->exists()) {
+            return 'No se puede eliminar: la zona tiene programaciones registradas.';
+        }
+
+        return StaffGroup::where('zone_id', $this->id)->exists()
+            ? 'No se puede eliminar: la zona está en un grupo de personal.'
             : null;
     }
 

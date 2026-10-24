@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\PersonController;
 use App\Http\Controllers\Api\RouteController;
 use App\Http\Controllers\Api\ScheduleController;
 use App\Http\Controllers\Api\SchedulingController;
+use App\Http\Controllers\Api\StaffGroupController;
 use App\Http\Controllers\Api\UserTypeController;
 use App\Http\Controllers\Api\VacationController;
 use App\Http\Controllers\Api\VehicleColorController;
@@ -118,6 +119,9 @@ Route::name('api.')->group(function () {
         // Edicion masiva (W19): mismos cambios a varias programaciones.
         Route::post('schedulings/bulk-update', [SchedulingController::class, 'bulkUpdate']);
         Route::apiResource('schedulings', SchedulingController::class);
+
+        // Grupos de personal: disponibilidad en vivo para el formulario.
+        Route::post('staff-groups/availability', [StaffGroupController::class, 'availability']);
 
         // Recorridos por dia: calendario (W20) e inicio de recorrido (W21).
         // No hay store ni destroy: los recorridos los genera la programacion.

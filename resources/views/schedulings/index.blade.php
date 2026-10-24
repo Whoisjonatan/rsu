@@ -105,7 +105,7 @@
                             <th>Ruta</th>
                             <th>Vehículo</th>
                             <th>Conductor</th>
-                            <th>Ayudante</th>
+                            <th>Ayudantes</th>
                             <th>Turno</th>
                             <th>Estado</th>
                             <th class="text-right">Acciones</th>
@@ -126,11 +126,11 @@
                                 <td><span class="font-mono">{{ $row->vehicle?->plate ?? '—' }}</span></td>
                                 <td>{{ $row->driver?->full_name ?? '—' }}</td>
                                 <td>
-                                    @if ($row->helper)
-                                        {{ $row->helper->full_name }}
-                                    @else
+                                    @forelse ($row->helpers as $helper)
+                                        <span class="block whitespace-nowrap">{{ $helper->full_name }}</span>
+                                    @empty
                                         <em class="text-stone-400">Sin ayudante</em>
-                                    @endif
+                                    @endforelse
                                 </td>
                                 <td>
                                     <span title="{{ $row->schedule?->label }}">

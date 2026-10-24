@@ -205,15 +205,17 @@ class VehicleRoute extends Model
     }
 
     /**
-     * Deja como ocupantes al conductor y al ayudante de la programacion.
+     * Deja como ocupantes al conductor y a los ayudantes de la programacion.
      *
      * Solo toca a los que siguen en "asignado": un reemplazo por personal de
      * reserva ya registrado en W21 (status "reemplazado" + replaced_user_id)
      * no se deshace porque despues se reedite la programacion maestra.
+     *
+     * @param  list<int>  $helperIds
      */
-    public function syncOccupants(int $driverId, ?int $helperId): void
+    public function syncOccupants(int $driverId, array $helperIds): void
     {
-        $wanted = array_values(array_filter([$driverId, $helperId]));
+        $wanted = array_values(array_unique(array_filter([$driverId, ...$helperIds])));
 
         $this->occupants()
             ->where('status', 'asignado')

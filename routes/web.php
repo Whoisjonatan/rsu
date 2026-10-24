@@ -11,6 +11,7 @@ use App\Http\Controllers\Web\PersonController;
 use App\Http\Controllers\Web\RouteController;
 use App\Http\Controllers\Web\ScheduleController;
 use App\Http\Controllers\Web\SchedulingController;
+use App\Http\Controllers\Web\StaffGroupController;
 use App\Http\Controllers\Web\UserTypeController;
 use App\Http\Controllers\Web\VacationController;
 use App\Http\Controllers\Web\VehicleCatalogController;
@@ -125,6 +126,14 @@ Route::middleware('auth')->group(function () {
     Route::post('turnos', [ScheduleController::class, 'store'])->name('schedules.store');
     Route::put('turnos/{schedule}', [ScheduleController::class, 'update'])->name('schedules.update');
     Route::delete('turnos/{schedule}', [ScheduleController::class, 'destroy'])->name('schedules.destroy');
+
+    // Grupos de personal: plantillas para programar solo con el rango de fechas.
+    Route::get('grupos-personal', [StaffGroupController::class, 'index'])->name('staffgroups.index');
+    Route::get('grupos-personal/nuevo', [StaffGroupController::class, 'create'])->name('staffgroups.create');
+    Route::post('grupos-personal', [StaffGroupController::class, 'store'])->name('staffgroups.store');
+    Route::get('grupos-personal/{staffgroup}', [StaffGroupController::class, 'edit'])->whereNumber('staffgroup')->name('staffgroups.edit');
+    Route::put('grupos-personal/{staffgroup}', [StaffGroupController::class, 'update'])->whereNumber('staffgroup')->name('staffgroups.update');
+    Route::delete('grupos-personal/{staffgroup}', [StaffGroupController::class, 'destroy'])->whereNumber('staffgroup')->name('staffgroups.destroy');
 
     // Feriados: un feriado activo no lleva recorridos.
     Route::get('feriados', [HolidayController::class, 'index'])->name('holidays.index');

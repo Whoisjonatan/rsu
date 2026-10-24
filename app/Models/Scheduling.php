@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Services\Scheduling\SchedulingRules;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 class Scheduling extends Model
 {
     /** Relaciones que pintan las listas y la ficha (W17, W18). */
-    public const RELATIONS = ['zone', 'route', 'vehicle', 'schedule', 'driver', 'helper'];
+    public const RELATIONS = ['zone', 'route', 'vehicle', 'schedule', 'driver', 'helpers'];
 
     /**
      * Filtros del listado de W17. Los comparten el API y la vista Blade.
@@ -107,6 +109,11 @@ class Scheduling extends Model
     {
         DB::transaction(function () use ($data) {
             $this->fill($data)->save();
+
+            if (array_key_exists('helper_ids', $data)) {
+                $this->syncHelpers(SchedulingRules::normalizeHelpers($data['helper_ids']));
+            }
+
             $this->syncVehicleRoutes();
         });
 
@@ -137,8 +144,8 @@ class Scheduling extends Model
     ];
 
     protected $fillable = [
-        'zone_id', 'route_id', 'vehicle_id', 'schedule_id',
-        'driver_id', 'helper_id', 'weekdays', 'start_date', 'end_date', 'status',
+        'zone_id', 'staffgroup_id', 'route_id', 'vehicle_id', 'schedule_id',
+        'driver_id', 'weekdays', 'start_date', 'end_date', 'status',
     ];
 
     /**
@@ -200,9 +207,41 @@ class Scheduling extends Model
         return $this->belongsTo(User::class, 'driver_id');
     }
 
-    public function helper(): BelongsTo
+    /** El grupo de personal del que salió, si salió de uno. */
+    public function staffGroup(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'helper_id');
+        return $this->belongsTo(StaffGroup::class, 'staffgroup_id');
+    }
+
+    /** Ayudantes, en el orden en que se eligieron. Caben tantos como admita el vehículo. */
+    public function helpers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'schedulinghelpers')
+            ->withPivot('position')
+            ->withTimestamps()
+            ->orderByPivot('position');
+    }
+
+    /** @return list<int> */
+    public function helperIds(): array
+    {
+        return $this->helpers->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    /** @param  list<int>  $ids */
+    public function syncHelpers(array $ids): void
+    {
+        $this->helpers()->sync(collect($ids)->values()->mapWithKeys(
+            fn (int $id, int $index) => [$id => ['position' => $index + 1]],
+        )->all());
+
+        $this->unsetRelation('helpers');
+    }
+
+    /** "Pérez, Ana; Ruiz, Luis" para las listas. */
+    public function helpersLabel(): string
+    {
+        return $this->helpers->pluck('full_name')->implode('; ');
     }
 
     public function vehicleRoutes(): HasMany
@@ -251,10 +290,10 @@ class Scheduling extends Model
         }
 
         $conflicts = [];
+        $crew = collect([['Conductor', $this->driver]])
+            ->concat($this->helpers->map(fn (User $helper) => ['Ayudante', $helper]));
 
-        foreach (['driver' => 'Conductor', 'helper' => 'Ayudante'] as $relation => $role) {
-            $person = $this->{$relation};
-
+        foreach ($crew as [$role, $person]) {
             if (! $person) {
                 continue;
             }
@@ -329,6 +368,7 @@ class Scheduling extends Model
             ->keyBy(fn (VehicleRoute $route) => $route->date_route->toDateString());
 
         $creados = 0;
+        $helperIds = $this->helperIds();
 
         foreach ($dates as $date) {
             if ($existing->has($date)) {
@@ -343,7 +383,7 @@ class Scheduling extends Model
                         'schedule_id' => $this->schedule_id,
                     ]);
 
-                    $route->syncOccupants($this->driver_id, $this->helper_id);
+                    $route->syncOccupants($this->driver_id, $helperIds);
                 }
 
                 continue;
@@ -357,7 +397,7 @@ class Scheduling extends Model
                 'status' => 'programado',
             ]);
 
-            $route->syncOccupants($this->driver_id, $this->helper_id);
+            $route->syncOccupants($this->driver_id, $helperIds);
             $creados++;
         }
 

@@ -11,7 +11,7 @@ import { api, errorMessage } from '../bootstrap';
 export default (config) => ({
     selected: [],
     active: [],
-    values: {},
+    values: { helper_ids: [] },
     simulation: null,
     result: null,
     busy: false,
@@ -38,6 +38,13 @@ export default (config) => ({
 
         for (const key of this.active) {
             const value = this.values[key];
+
+            // Los ayudantes son una lista: vacía también es un cambio (quitarlos).
+            if (key === 'helper_ids') {
+                changes[key] = (value ?? []).map(Number);
+                continue;
+            }
+
             if (value === undefined || value === '') continue;
             changes[key] = key === 'end_date' ? value : Number(value);
         }

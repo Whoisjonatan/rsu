@@ -4,6 +4,7 @@ namespace App\Services\Scheduling;
 
 use App\Models\Scheduling;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Models\Zone;
 use Illuminate\Contracts\Validation\Validator as ValidatorContract;
 use Illuminate\Support\Facades\Validator;
@@ -28,6 +29,8 @@ class SchedulingRules
     {
         return [
             'zone_id' => ['required', 'exists:zones,id'],
+            // Solo informa de qué plantilla salió; los datos viajan completos.
+            'staffgroup_id' => ['nullable', 'exists:staffgroups,id'],
             'route_id' => ['nullable', Rule::exists('routes', 'id')],
             'vehicle_id' => [
                 'required',
@@ -37,7 +40,9 @@ class SchedulingRules
             ],
             'schedule_id' => ['required', 'exists:schedules,id'],
             'driver_id' => ['required', 'exists:users,id'],
-            'helper_id' => ['nullable', 'different:driver_id', 'exists:users,id'],
+            // Cuántos caben lo decide la capacidad del vehículo (checkCapacity).
+            'helper_ids' => ['nullable', 'array', 'max:10'],
+            'helper_ids.*' => ['integer', 'exists:users,id'],
             'weekdays' => ['required', 'array', 'min:1'],
             'weekdays.*' => ['integer', 'between:1,7'],
             'start_date' => ['required', 'date'],
@@ -53,7 +58,7 @@ class SchedulingRules
     {
         return [
             'vehicle_id.exists' => 'El vehículo no existe o no está operativo.',
-            'helper_id.different' => 'El ayudante no puede ser la misma persona que el conductor.',
+            'helper_ids.*.exists' => 'Uno de los ayudantes no existe.',
             'weekdays.required' => 'Marca al menos un día de la semana.',
             'weekdays.min' => 'Marca al menos un día de la semana.',
             'end_date.after_or_equal' => 'La fecha de término no puede ser anterior a la de inicio.',
@@ -73,10 +78,26 @@ class SchedulingRules
         return $days;
     }
 
+    /**
+     * Ayudantes sin vacíos ni repetidos, en el orden en que se eligieron (el
+     * formulario manda un select por asiento y los libres llegan vacíos).
+     *
+     * @return list<int>
+     */
+    public static function normalizeHelpers(mixed $helpers): array
+    {
+        if (! is_array($helpers)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map('intval', array_filter($helpers, fn ($id) => filled($id)))));
+    }
+
     /** Validador completo, reglas base mas las cuatro del informe. */
     public static function validator(array $data, ?int $ignoreId = null): ValidatorContract
     {
         $data['weekdays'] = self::normalizeWeekdays($data['weekdays'] ?? null);
+        $data['helper_ids'] = self::normalizeHelpers($data['helper_ids'] ?? [$data['helper_id'] ?? null]);
 
         $validator = Validator::make($data, self::rules(), self::messages());
 
@@ -99,8 +120,10 @@ class SchedulingRules
 
             $data = $validator->getData();
             $data['weekdays'] = self::normalizeWeekdays($data['weekdays'] ?? null);
+            $data['helper_ids'] = self::normalizeHelpers($data['helper_ids'] ?? null);
 
             self::checkZone($validator, $data, $ignoreId);
+            self::checkCrew($validator, $data);
 
             $dates = self::occurrenceDates($data);
 
@@ -113,10 +136,10 @@ class SchedulingRules
                 return;
             }
 
-            self::checkPerson($validator, $data, 'driver_id', 'El conductor', $dates);
+            self::checkPerson($validator, (int) $data['driver_id'], 'driver_id', 'El conductor', $dates);
 
-            if (! empty($data['helper_id'])) {
-                self::checkPerson($validator, $data, 'helper_id', 'El ayudante', $dates);
+            foreach (User::findMany($data['helper_ids']) as $helper) {
+                self::checkPerson($validator, $helper->id, 'helper_ids', "El ayudante {$helper->full_name}", $dates);
             }
 
             self::checkOverlap($validator, $data, $ignoreId);
@@ -159,13 +182,36 @@ class SchedulingRules
     }
 
     /**
+     * La tripulación cabe en el vehículo: un conductor más tantos ayudantes
+     * como permita su capacidad de ocupantes. El conductor no puede ir
+     * también de ayudante.
+     */
+    private static function checkCrew(ValidatorContract $validator, array $data): void
+    {
+        if (in_array((int) $data['driver_id'], $data['helper_ids'], true)) {
+            $validator->errors()->add('helper_ids', 'El conductor no puede ir también como ayudante.');
+        }
+
+        $vehicle = Vehicle::find($data['vehicle_id'] ?? null);
+
+        if ($vehicle && 1 + count($data['helper_ids']) > max(1, $vehicle->occupant_capacity)) {
+            $validator->errors()->add('helper_ids', sprintf(
+                'El vehículo %s admite %s: 1 conductor + %s.',
+                $vehicle->code,
+                $vehicle->occupant_capacity === 1 ? '1 persona' : "{$vehicle->occupant_capacity} personas",
+                $vehicle->helperSeats() === 1 ? '1 ayudante' : "{$vehicle->helperSeats()} ayudantes",
+            ));
+        }
+    }
+
+    /**
      * Validaciones 1 y 2: solo personal contratado y sin vacaciones.
      *
      * @param  list<string>  $dates
      */
-    private static function checkPerson(ValidatorContract $validator, array $data, string $field, string $label, array $dates): void
+    private static function checkPerson(ValidatorContract $validator, int $personId, string $field, string $label, array $dates): void
     {
-        $person = User::with(['contracts', 'vacations'])->find($data[$field] ?? null);
+        $person = User::with(['contracts', 'vacations'])->find($personId);
 
         if (! $person) {
             return;
@@ -211,30 +257,42 @@ class SchedulingRules
             ->when($ignoreId, fn ($q) => $q->whereKeyNot($ignoreId))
             ->whereDate('start_date', '<=', $data['end_date'])
             ->whereDate('end_date', '>=', $data['start_date'])
-            ->with(['vehicle', 'driver', 'helper', 'zone'])
+            ->with(['vehicle', 'helpers', 'zone'])
             ->get();
 
         $weekdays = self::normalizeWeekdays($data['weekdays'] ?? null);
-        $helperId = ! empty($data['helper_id']) ? (int) $data['helper_id'] : null;
+
+        // Cada persona de esta programación, con el campo donde va su aviso.
+        // Una persona choca aunque en la otra tenga otra función: no puede
+        // ir de conductor en un vehículo y de ayudante en otro a la vez.
+        $crew = [(int) $data['driver_id'] => ['driver_id', 'El conductor']];
+
+        foreach ($data['helper_ids'] ?? [] as $helperId) {
+            $crew[(int) $helperId] ??= ['helper_ids', 'El ayudante'];
+        }
+
+        $names = User::findMany(array_keys($crew))->pluck('full_name', 'id');
 
         foreach ($candidates as $other) {
             if (array_intersect($weekdays, array_map('intval', $other->weekdays ?? [])) === []) {
                 continue;
             }
 
-            $clashes = array_filter([
-                'vehicle_id' => $other->vehicle_id === (int) $data['vehicle_id']
-                    ? 'El vehículo '.($other->vehicle->code ?? '')
-                    : null,
-                'driver_id' => $other->driver_id === (int) $data['driver_id']
-                    ? 'El conductor '.($other->driver->full_name ?? '')
-                    : null,
-                'helper_id' => $helperId !== null && in_array($helperId, [$other->helper_id, $other->driver_id], true)
-                    ? 'El ayudante '.(User::find($helperId)?->full_name ?? '')
-                    : null,
-            ]);
+            $clashes = [];
 
-            foreach ($clashes as $field => $what) {
+            if ($other->vehicle_id === (int) $data['vehicle_id']) {
+                $clashes[] = ['vehicle_id', 'El vehículo '.($other->vehicle->code ?? '')];
+            }
+
+            $otherCrew = [$other->driver_id, ...$other->helperIds()];
+
+            foreach ($crew as $personId => [$field, $role]) {
+                if (in_array($personId, $otherCrew, true)) {
+                    $clashes[] = [$field, $role.' '.($names[$personId] ?? '')];
+                }
+            }
+
+            foreach ($clashes as [$field, $what]) {
                 $validator->errors()->add($field, sprintf(
                     '%s ya está programado en ese turno y esos días (%s, zona %s, del %s al %s).',
                     trim($what),

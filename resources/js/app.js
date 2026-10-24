@@ -8,6 +8,7 @@ import mapPicker from './components/map-picker';
 import schedulingForm from './components/scheduling-form';
 import startRoute from './components/start-route';
 import bulkEdit from './components/bulk-edit';
+import staffGroupForm from './components/staff-group-form';
 
 Alpine.plugin(focus);
 
@@ -16,6 +17,7 @@ Alpine.data('mapPicker', mapPicker);
 Alpine.data('schedulingForm', schedulingForm);
 Alpine.data('startRoute', startRoute);
 Alpine.data('bulkEdit', bulkEdit);
+Alpine.data('staffGroupForm', staffGroupForm);
 
 window.Alpine = Alpine;
 

@@ -7,6 +7,7 @@ use App\Http\Requests\SchedulingRequest;
 use App\Http\Resources\SchedulingResource;
 use App\Models\Scheduling;
 use App\Models\User;
+use App\Models\UserType;
 use App\Models\Zone;
 use App\Services\Scheduling\SchedulingRules;
 use Illuminate\Http\JsonResponse;
@@ -152,7 +153,9 @@ class SchedulingController extends Controller
             'changes.schedule_id' => ['sometimes', 'exists:schedules,id'],
             'changes.vehicle_id' => ['sometimes', Rule::exists('vehicles', 'id')->where('status', 'operativo')],
             'changes.driver_id' => ['sometimes', 'exists:users,id'],
-            'changes.helper_id' => ['sometimes', 'nullable', 'exists:users,id'],
+            // Reemplaza a todos los ayudantes; vacío los quita.
+            'changes.helper_ids' => ['sometimes', 'array'],
+            'changes.helper_ids.*' => ['integer', 'exists:users,id'],
             'changes.end_date' => ['sometimes', 'date'],
             'changes.status' => ['sometimes', Rule::in(['activa', 'inactiva'])],
         ], [], ['changes.vehicle_id' => 'vehículo']);
@@ -161,11 +164,12 @@ class SchedulingController extends Controller
         $aplicadas = [];
         $rechazadas = [];
 
-        foreach (Scheduling::findMany($data['ids']) as $scheduling) {
+        foreach (Scheduling::with('helpers')->findMany($data['ids']) as $scheduling) {
             $payload = array_merge($scheduling->only([
                 'zone_id', 'route_id', 'vehicle_id', 'schedule_id',
-                'driver_id', 'helper_id', 'status',
+                'driver_id', 'status',
             ]), [
+                'helper_ids' => $scheduling->helperIds(),
                 'weekdays' => array_map('intval', $scheduling->weekdays ?? []),
                 'start_date' => $scheduling->start_date->toDateString(),
                 'end_date' => $scheduling->end_date->toDateString(),
@@ -243,7 +247,8 @@ class SchedulingController extends Controller
      */
     public function defaultsForZone(Zone $zone): JsonResponse
     {
-        $last = Scheduling::where('zone_id', $zone->id)
+        $last = Scheduling::with(['helpers', 'vehicle'])
+            ->where('zone_id', $zone->id)
             ->orderByDesc('start_date')
             ->orderByDesc('id')
             ->first();
@@ -254,7 +259,13 @@ class SchedulingController extends Controller
             ->get();
 
         $bySlug = fn (string $slug) => $staff
-            ->first(fn (User $person) => $person->usertype?->slug === $slug)?->id;
+            ->filter(fn (User $person) => $person->usertype?->slug === $slug)
+            ->pluck('id')
+            ->all();
+
+        // Sin vehículo conocido se propone un solo ayudante.
+        $seats = $last?->vehicle?->helperSeats() ?? 1;
+        $helperIds = array_slice($bySlug(UserType::HELPER) ?: ($last?->helperIds() ?? []), 0, $seats);
 
         return response()->json([
             'vehicle_id' => $last?->vehicle_id,
@@ -262,8 +273,8 @@ class SchedulingController extends Controller
             'route_id' => $last?->route_id,
             // La zona manda sobre la última programación para el personal:
             // es el dato explícito de la ficha, no una inferencia.
-            'driver_id' => $bySlug('conductor') ?? $last?->driver_id,
-            'helper_id' => $bySlug('ayudante') ?? $last?->helper_id,
+            'driver_id' => $bySlug(UserType::DRIVER)[0] ?? $last?->driver_id,
+            'helper_ids' => $helperIds,
             'weekdays' => $last ? array_map('intval', $last->weekdays ?? []) : [],
             'source' => $last ? 'ultima-programacion' : 'zona',
         ]);

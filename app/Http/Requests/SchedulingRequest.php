@@ -40,6 +40,10 @@ class SchedulingRequest extends FormRequest
         if ($this->has('weekdays')) {
             $this->merge(['weekdays' => SchedulingRules::normalizeWeekdays($this->input('weekdays'))]);
         }
+
+        // Los clientes que aún mandan un solo helper_id siguen funcionando.
+        $helpers = $this->has('helper_ids') ? $this->input('helper_ids') : [$this->input('helper_id')];
+        $this->merge(['helper_ids' => SchedulingRules::normalizeHelpers($helpers)]);
     }
 
     public function withValidator(Validator $validator): void

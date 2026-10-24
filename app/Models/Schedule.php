@@ -43,8 +43,12 @@ class Schedule extends Model
     /** Por qué no se puede eliminar, o null si se puede. */
     public function deletionBlocker(): ?string
     {
-        return $this->schedulings()->exists() || $this->vehicleRoutes()->exists()
-            ? 'No se puede eliminar: el turno tiene programaciones o recorridos.'
+        if ($this->schedulings()->exists() || $this->vehicleRoutes()->exists()) {
+            return 'No se puede eliminar: el turno tiene programaciones o recorridos.';
+        }
+
+        return StaffGroup::where('schedule_id', $this->id)->exists()
+            ? 'No se puede eliminar: el turno está en un grupo de personal.'
             : null;
     }
 

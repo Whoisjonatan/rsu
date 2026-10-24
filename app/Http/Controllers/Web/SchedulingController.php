@@ -8,6 +8,7 @@ use App\Models\Holiday;
 use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\Scheduling;
+use App\Models\StaffGroup;
 use App\Models\User;
 use App\Models\UserType;
 use App\Models\Vehicle;
@@ -63,9 +64,14 @@ class SchedulingController extends Controller
     }
 
     /** W18 Nueva programación. */
-    public function create(): View
+    public function create(Request $request): View
     {
-        return view('schedulings.form', ['scheduling' => null, ...$this->formData()]);
+        // "Programar" desde Grupos de personal llega con ?grupo=ID y lo deja elegido.
+        return view('schedulings.form', [
+            'scheduling' => null,
+            'groupId' => $request->integer('grupo') ?: null,
+            ...$this->formData(),
+        ]);
     }
 
     public function store(SchedulingRequest $request): RedirectResponse
@@ -174,11 +180,11 @@ class SchedulingController extends Controller
         // SchedulingRules, porque la programación puede caer fuera del contrato.
         // Al editar, cada combo conserva a su titular aunque ya no cumpla.
         $today = now()->toDateString();
-        $staff = fn (string $slug, ?int $keep) => User::query()
+        $staff = fn (string $slug, array $keep) => User::query()
             ->where(fn ($q) => $q
                 ->where(fn ($q) => $q->ofFunction($slug)->whereHas('contracts', fn ($c) => $c
                     ->where(fn ($c) => $c->whereNull('end_date')->orWhere('end_date', '>=', $today))))
-                ->when($keep, fn ($q) => $q->orWhere('id', $keep)))
+                ->when($keep !== [], fn ($q) => $q->orWhereIn('id', $keep)))
             ->orderBy('lastname')
             ->orderBy('name')
             ->get(['id', 'name', 'lastname', 'dni']);
@@ -196,12 +202,14 @@ class SchedulingController extends Controller
             'schedules' => Schedule::orderBy('time_start')->get(),
             // Solo los operativos; al editar se mantiene el asignado aunque ya
             // no lo esté, para que el combo no lo pierda.
-            'vehicles' => Vehicle::with(['brand', 'model'])
+            'vehicles' => Vehicle::with(['brand', 'model', 'type'])
                 ->where(fn ($q) => $q->operational()->when($current, fn ($q) => $q->orWhere('id', $current->vehicle_id)))
                 ->orderBy('code')
                 ->get(),
-            'drivers' => $staff(UserType::DRIVER, $current?->driver_id),
-            'helpers' => $staff(UserType::HELPER, $current?->helper_id),
+            'drivers' => $staff(UserType::DRIVER, array_filter([$current?->driver_id])),
+            'helpers' => $staff(UserType::HELPER, $current?->helperIds() ?? []),
+            // Plantillas para precargar todo salvo las fechas (solo en el alta).
+            'groups' => $current ? collect() : StaffGroup::with('helpers:id')->active()->orderBy('name')->get(),
         ];
     }
 }

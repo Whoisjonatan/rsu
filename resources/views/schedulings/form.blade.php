@@ -9,7 +9,8 @@
         'vehicle_id' => $value('vehicle_id'),
         'schedule_id' => $value('schedule_id'),
         'driver_id' => $value('driver_id'),
-        'helper_id' => $value('helper_id'),
+        'helper_ids' => array_map('strval', old('helper_ids', $scheduling?->helperIds() ?? [])),
+        'staffgroup_id' => (string) old('staffgroup_id', $scheduling?->staffgroup_id ?? ($groupId ?? '')),
         'weekdays' => array_map('intval', old('weekdays', $scheduling?->weekdays ?? [1, 2, 3, 4, 5])),
         'start_date' => old('start_date', $scheduling?->start_date?->toDateString() ?? ''),
         'end_date' => old('end_date', $scheduling?->end_date?->toDateString() ?? ''),
@@ -20,9 +21,16 @@
         'zones' => $zones,
         'routes' => $routes,
         'schedules' => $schedules->map->only('id', 'label'),
-        'vehicles' => $vehicles->map->only('id', 'plate'),
+        'vehicles' => $vehicles->map(fn ($vehicle) => [
+            'id' => $vehicle->id,
+            'plate' => $vehicle->plate,
+            'seats' => $vehicle->helperSeats(),
+            'crew' => $vehicle->crewLabel(),
+            'detail' => $vehicle->code.' · '.($vehicle->type?->name ?? 'Sin tipo'),
+        ]),
         'drivers' => $drivers->map->only('id', 'full_name'),
         'helpers' => $helpers->map->only('id', 'full_name'),
+        'groups' => $groups->map->schedulingDefaults(),
     ];
 
     $checks = [
@@ -56,6 +64,28 @@
                 description="Los días marcados y el rango de fechas deciden cuántos recorridos se generan." />
 
             <div class="grid gap-4 p-5 sm:grid-cols-2">
+                {{-- Plantilla: rellena todo menos las fechas. Solo en el alta. --}}
+                @if ($groups->isNotEmpty())
+                    <div class="rounded-lg border border-brand-200 bg-brand-50/50 p-4 sm:col-span-2">
+                        <x-field label="Grupo de personal" name="staffgroup_id"
+                            hint="Opcional. Carga turno, zona, vehículo, días, conductor y ayudantes: solo te falta el rango de fechas.">
+                            <select id="staffgroup_id" name="staffgroup_id" x-model="form.staffgroup_id" @change="applyGroup(form.staffgroup_id)"
+                                class="{{ $fieldClass('staffgroup_id') }}">
+                                <option value="">Sin grupo: llenar a mano</option>
+                                @foreach ($groups as $group)
+                                    <option value="{{ $group->id }}">{{ $group->name }}</option>
+                                @endforeach
+                            </select>
+                        </x-field>
+                        <p x-show="groupLoaded" x-cloak class="mt-2 flex items-start gap-2 text-[12px] text-brand-700">
+                            <x-lucide-circle-check class="mt-px size-4 shrink-0" />
+                            <span x-text="groupLoaded"></span>
+                        </p>
+                    </div>
+                @elseif ($scheduling?->staffgroup_id)
+                    <input type="hidden" name="staffgroup_id" :value="form.staffgroup_id">
+                @endif
+
                 <x-field label="Zona" name="zone_id" required>
                     <select id="zone_id" name="zone_id" x-model="form.zone_id" class="{{ $fieldClass('zone_id') }}" required>
                         <option value="">Selecciona una zona</option>
@@ -86,9 +116,13 @@
                     <select id="vehicle_id" name="vehicle_id" x-model="form.vehicle_id" class="{{ $fieldClass('vehicle_id') }}" required>
                         <option value="">Selecciona un vehículo</option>
                         @foreach ($vehicles as $vehicle)
-                            <option value="{{ $vehicle->id }}">{{ $vehicle->plate }} · {{ $vehicle->brand?->name }} {{ $vehicle->model?->name }}</option>
+                            <option value="{{ $vehicle->id }}">
+                                {{ $vehicle->plate }} · {{ $vehicle->brand?->name }} {{ $vehicle->model?->name }} (Capacidad: {{ $vehicle->occupant_capacity }})
+                            </option>
                         @endforeach
                     </select>
+                    <p x-show="vehicle" x-cloak class="mt-1.5 text-[11px] text-stone-500"
+                        x-text="vehicle ? vehicle.detail + ' · ' + vehicle.crew : ''"></p>
                 </x-field>
 
                 <x-field label="Turno" name="schedule_id" required>
@@ -109,14 +143,36 @@
                     </select>
                 </x-field>
 
-                <x-field label="Ayudante" name="helper_id" hint="Solo aparece personal con contrato vigente">
-                    <select id="helper_id" name="helper_id" x-model="form.helper_id" class="{{ $fieldClass('helper_id') }}">
-                        <option value="">Sin ayudante</option>
-                        @foreach ($helpers as $person)
-                            <option value="{{ $person->id }}">{{ $person->full_name }}</option>
+                {{-- Un selector por asiento: la capacidad del vehículo menos el conductor. --}}
+                <div x-show="!vehicle || seats === 0">
+                    <p class="label">Ayudantes</p>
+                    <p class="rounded-md border border-dashed border-stone-300 px-3 py-2.5 text-[12px] text-stone-500"
+                        x-text="vehicle ? 'Este vehículo solo lleva al conductor.' : 'Elige un vehículo para saber cuántos ayudantes caben.'"></p>
+                </div>
+
+                <template x-for="(helper, index) in form.helper_ids" :key="index">
+                    <div>
+                        <label :for="'helper_' + index" class="label" x-text="'Ayudante ' + (index + 1)"></label>
+                        <select :id="'helper_' + index" x-model="form.helper_ids[index]"
+                            class="{{ $errors->has('helper_ids') || $errors->has('helper_ids.*') ? 'field field-error' : 'field' }}">
+                            <option value="">Sin ayudante</option>
+                            <template x-for="person in helperOptions(index)" :key="person.id">
+                                <option :value="person.id" :selected="String(person.id) === String(form.helper_ids[index])"
+                                    x-text="person.full_name"></option>
+                            </template>
+                        </select>
+                    </div>
+                </template>
+                <template x-for="id in form.helper_ids.filter(Boolean)" :key="id">
+                    <input type="hidden" name="helper_ids[]" :value="id">
+                </template>
+                @if ($errors->has('helper_ids') || $errors->has('helper_ids.*'))
+                    <div class="sm:col-span-2">
+                        @foreach (array_merge($errors->get('helper_ids'), ...array_values($errors->get('helper_ids.*'))) as $message)
+                            <p class="text-[11px] font-medium text-red-600">{{ $message }}</p>
                         @endforeach
-                    </select>
-                </x-field>
+                    </div>
+                @endif
 
                 {{-- El aviso sale mientras se elige, no al guardar: es lo que distingue la checklist viva de un error tardío. --}}
                 <p x-show="vacationWarning" x-cloak

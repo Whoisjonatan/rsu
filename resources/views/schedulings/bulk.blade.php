@@ -4,7 +4,7 @@
         'schedule_id' => ['Cambiar turno', $schedules->map(fn ($row) => [$row->id, $row->label])],
         'vehicle_id' => ['Cambiar vehículo', $vehicles->map(fn ($row) => [$row->id, $row->plate])],
         'driver_id' => ['Cambiar conductor', $drivers->map(fn ($row) => [$row->id, $row->full_name])],
-        'helper_id' => ['Cambiar ayudante', $helpers->map(fn ($row) => [$row->id, $row->full_name])],
+        'helper_ids' => ['Cambiar ayudantes', $helpers->map(fn ($row) => [$row->id, $row->full_name])],
         'end_date' => ['Cambiar fecha de término', null],
     ];
 @endphp
@@ -84,7 +84,16 @@
                                 <input type="checkbox" class="size-4 accent-brand-600" value="{{ $key }}" x-model="active">
                                 {{ $label }}
                             </label>
-                            @if ($options)
+                            @if ($key === 'helper_ids')
+                                {{-- Reemplaza a todos los ayudantes; cuántos caben lo valida el vehículo de cada fila. --}}
+                                <select multiple size="5" class="field" :disabled="!active.includes('{{ $key }}')"
+                                    x-model="values.{{ $key }}" aria-label="{{ $label }}">
+                                    @foreach ($options as [$id, $text])
+                                        <option value="{{ $id }}">{{ $text }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-[11px] text-stone-500">Ctrl + clic para elegir varios. Sin elegir ninguno se quitan los ayudantes.</p>
+                            @elseif ($options)
                                 <select class="field" :disabled="!active.includes('{{ $key }}')" x-model="values.{{ $key }}"
                                     aria-label="{{ $label }}">
                                     <option value="" x-text="active.includes('{{ $key }}') ? 'Elige un valor' : 'Sin cambios'"></option>

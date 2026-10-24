@@ -2,11 +2,12 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Scheduling;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin \App\Models\Scheduling
+ * @mixin Scheduling
  */
 class SchedulingResource extends JsonResource
 {
@@ -52,11 +53,18 @@ class SchedulingResource extends JsonResource
                 'full_name' => $this->driver->full_name,
                 'dni' => $this->driver->dni,
             ]),
-            'helper_id' => $this->helper_id,
-            'helper' => $this->whenLoaded('helper', fn () => $this->helper ? [
-                'id' => $this->helper->id,
-                'full_name' => $this->helper->full_name,
-                'dni' => $this->helper->dni,
+            'helper_ids' => $this->whenLoaded('helpers', fn () => $this->helperIds()),
+            'helpers' => $this->whenLoaded('helpers', fn () => $this->helpers->map(fn ($helper) => [
+                'id' => $helper->id,
+                'full_name' => $helper->full_name,
+                'dni' => $helper->dni,
+            ])),
+            // Compatibilidad con los clientes de un solo ayudante: el primero.
+            'helper_id' => $this->whenLoaded('helpers', fn () => $this->helpers->first()?->id),
+            'helper' => $this->whenLoaded('helpers', fn () => ($first = $this->helpers->first()) ? [
+                'id' => $first->id,
+                'full_name' => $first->full_name,
+                'dni' => $first->dni,
             ] : null),
             'weekdays' => array_map('intval', $this->weekdays ?? []),
             'weekdays_label' => $this->weekdaysLabel(),
