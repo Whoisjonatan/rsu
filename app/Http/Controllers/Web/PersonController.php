@@ -7,7 +7,6 @@ use App\Http\Requests\PersonRequest;
 use App\Models\User;
 use App\Models\UserType;
 use App\Models\Vacation;
-use App\Models\Zone;
 use App\Services\Dni\DniLookup;
 use App\Support\ListUrl;
 use Illuminate\Http\RedirectResponse;
@@ -124,7 +123,6 @@ class PersonController extends Controller
     {
         return [
             'types' => UserType::orderBy('name')->get(['id', 'name', 'slug']),
-            'zones' => Zone::orderBy('name')->get(['id', 'name']),
             'dniLookup' => $lookup->isEnabled() ? $lookup->provider() : null,
         ];
     }

@@ -191,7 +191,7 @@
         </x-card>
 
         <x-card>
-            <x-card-header title="Función y asignación"
+            <x-card-header title="Función y estado"
                 description="La licencia es obligatoria y debe estar vigente para la función Conductor." />
             <div class="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
                 <x-field label="Función" name="usertype_id" required>
@@ -199,15 +199,6 @@
                         <option value="">Selecciona una función</option>
                         @foreach ($types as $type)
                             <option value="{{ $type->id }}">{{ $type->name }}</option>
-                        @endforeach
-                    </select>
-                </x-field>
-
-                <x-field label="Zona asignada" name="zone_id">
-                    <select id="zone_id" name="zone_id" class="{{ $fieldClass('zone_id') }}">
-                        <option value="">Sin zona asignada</option>
-                        @foreach ($zones as $zone)
-                            <option value="{{ $zone->id }}" @selected($value('zone_id') == $zone->id)>{{ $zone->name }}</option>
                         @endforeach
                     </select>
                 </x-field>
