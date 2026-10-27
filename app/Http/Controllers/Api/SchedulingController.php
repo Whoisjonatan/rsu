@@ -50,11 +50,13 @@ class SchedulingController extends Controller
 
     public function store(SchedulingRequest $request): JsonResponse
     {
-        $scheduling = (new Scheduling)->saveAndSync($request->validated());
+        // Si amplía una que ya existía (ver SchedulingRules::mergeTarget) no hay alta: 200, no 201.
+        $target = $request->mergeTarget();
+        $scheduling = ($target ?? new Scheduling)->saveAndSync($request->validated());
 
         return (new SchedulingResource($scheduling->load(self::RELATIONS)->loadCount('vehicleRoutes')))
             ->response()
-            ->setStatusCode(201);
+            ->setStatusCode($target ? 200 : 201);
     }
 
     public function show(Scheduling $scheduling): SchedulingResource
@@ -108,7 +110,18 @@ class SchedulingController extends Controller
         // en verde y una en ambar. Aqui siempre se responde 200 con el estado
         // de cada una.
         $data = $request->all();
-        $validator = SchedulingRules::validator($data, $request->integer('id') ?: null);
+        $ignoreId = $request->integer('id') ?: null;
+
+        // Un alta que ampliaría otra programación se valida como lo que se
+        // guardará: la existente con el rango y los días sumados.
+        $target = $ignoreId ? null : SchedulingRules::mergeTarget($data);
+
+        if ($target) {
+            $data = SchedulingRules::mergeInto($target, $data);
+            $ignoreId = $target->id;
+        }
+
+        $validator = SchedulingRules::validator($data, $ignoreId);
         $validator->fails();
 
         $errors = $validator->errors();
@@ -144,6 +157,13 @@ class SchedulingController extends Controller
             'occurrences' => count(SchedulingRules::occurrenceDates($data)),
             // Los feriados que caen en un día marcado: explican por qué salen menos recorridos.
             'holidays' => $this->holidaysSkipped($data),
+            // W18 avisa de que "Programar" ampliará esta en vez de crear otra.
+            'merge' => $target ? [
+                'code' => $target->code,
+                'start_date' => $data['start_date'],
+                'end_date' => $data['end_date'],
+                'weekdays' => $data['weekdays'],
+            ] : null,
         ]);
     }
 

@@ -173,6 +173,14 @@ export default (config) => ({
         return `${weekday} ${formatDate(holiday.date)}${holiday.description ? ` · ${holiday.description}` : ''}`;
     },
 
+    /** "PRG-0004 quedará del 01/11/2026 al 30/11/2026 · Lun, Mié, Vie". */
+    get mergeLabel() {
+        const merge = this.validation?.merge;
+        if (!merge) return '';
+        const days = merge.weekdays.map((day) => DAY_SHORT[day - 1]).join(', ');
+        return `${merge.code} quedará del ${formatDate(merge.start_date)} al ${formatDate(merge.end_date)} · ${days}`;
+    },
+
     check(key) {
         return this.validation?.checks?.[key] ?? null;
     },

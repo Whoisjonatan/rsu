@@ -273,6 +273,16 @@
                     @endforeach
                 </ul>
 
+                {{-- Mismo grupo y turno con fechas cruzadas: no se crea otra, se amplía la existente. --}}
+                <div x-show="validation?.merge" x-cloak
+                    class="mx-5 mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-[12px] text-blue-800">
+                    <p class="flex items-start gap-2 font-medium">
+                        <x-lucide-git-merge class="mt-px size-3.5 shrink-0" />
+                        Este grupo ya tiene una programación en ese turno y esas fechas: se actualizará en vez de crear otra.
+                    </p>
+                    <p class="mt-1 pl-5.5 text-[11px] text-blue-700" x-text="mergeLabel"></p>
+                </div>
+
                 {{-- Un feriado no lleva recorrido; el mismo día de la semana siguiente sí. --}}
                 <div x-show="validation?.holidays?.length" x-cloak
                     class="mx-5 mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-[12px] text-blue-800">

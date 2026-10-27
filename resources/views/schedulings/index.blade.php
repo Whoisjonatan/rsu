@@ -26,14 +26,23 @@
 
     $plural = fn (int $count, string $one, string $many) => $count.' '.($count === 1 ? $one : $many);
     $date = $filters['date'];
-    $dateLabel = $date ? \Carbon\Carbon::parse($date)->format('d/m/Y') : null;
+    $dateFrom = $filters['date_from'];
+    $dateTo = $filters['date_to'];
+    $fmt = fn (string $value) => \Carbon\Carbon::parse($value)->format('d/m/Y');
+    $rangeLabel = match (true) {
+        filled($date) => "el {$fmt($date)}",
+        filled($dateFrom) && filled($dateTo) => "entre el {$fmt($dateFrom)} y el {$fmt($dateTo)}",
+        filled($dateFrom) => "desde el {$fmt($dateFrom)}",
+        filled($dateTo) => "hasta el {$fmt($dateTo)}",
+        default => null,
+    };
 
     // Recién creada una programación que empieza mañana, el filtro de fecha la
     // oculta y "no hay resultados" desconcierta: conviene decir que existen.
-    $emptyMessage = $date && $summary['total'] > 0
+    $emptyMessage = $rangeLabel && $summary['total'] > 0
         ? ($summary['total'] === 1
-            ? "La única programación registrada no está vigente el {$dateLabel}"
-            : "Ninguna de las {$summary['total']} programaciones está vigente el {$dateLabel}")
+            ? "La única programación registrada no está vigente {$rangeLabel}"
+            : "Ninguna de las {$summary['total']} programaciones está vigente {$rangeLabel}")
         : 'No hay programaciones que coincidan con los filtros';
 
     // Vacaciones registradas DESPUÉS de programar: las validaciones de W18
@@ -93,11 +102,16 @@
                         <option value="{{ $value }}" @selected($filters['status'] === $value)>{{ $label }}</option>
                     @endforeach
                 </select>
-                <label class="ml-auto flex items-center gap-2 text-[12px] text-stone-500">
-                    Vigentes el
-                    <input type="date" name="date" value="{{ $date }}" class="field w-auto min-w-36"
-                        aria-label="Ver las programaciones vigentes en esta fecha">
-                </label>
+                <div class="ml-auto flex flex-wrap items-center gap-2 text-[12px] text-stone-500">
+                    Vigentes del
+                    <input type="date" name="date_from" value="{{ $dateFrom }}" class="field w-auto min-w-36"
+                        aria-label="Vigentes desde esta fecha">
+                    al
+                    <input type="date" name="date_to" value="{{ $dateTo }}" class="field w-auto min-w-36"
+                        aria-label="Vigentes hasta esta fecha">
+                    <a href="{{ route('schedulings.index', array_filter(\Illuminate\Support\Arr::only($filters, ['zone_id', 'schedule_id', 'status']))) }}"
+                        class="btn btn-secondary" title="Volver a las vigentes hoy">Hoy</a>
+                </div>
             </form>
 
             <div class="overflow-x-auto">

@@ -6,6 +6,7 @@ use App\Models\Scheduling;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\Zone;
+use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator as ValidatorContract;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -92,6 +93,76 @@ class SchedulingRules
         }
 
         return array_values(array_unique(array_map('intval', array_filter($helpers, fn ($id) => filled($id)))));
+    }
+
+    /**
+     * Programar otra vez el mismo grupo en el mismo turno, con fechas que se
+     * cruzan con una programación que sigue en pie, no crea otra: amplía esa.
+     * Devuelve la que se ampliaría, o null si toca crear una nueva.
+     */
+    public static function mergeTarget(array $data): ?Scheduling
+    {
+        if (blank($data['staffgroup_id'] ?? null) || blank($data['schedule_id'] ?? null)) {
+            return null;
+        }
+
+        [$start, $end] = self::dateRange($data);
+
+        if ($start === null || $start > $end) {
+            return null;
+        }
+
+        return Scheduling::query()
+            ->where('staffgroup_id', (int) $data['staffgroup_id'])
+            ->where('schedule_id', (int) $data['schedule_id'])
+            ->where('status', '!=', 'finalizada')
+            ->whereDate('start_date', '<=', $end)
+            ->whereDate('end_date', '>=', $start)
+            ->orderBy('start_date')
+            ->first();
+    }
+
+    /**
+     * Lo que queda al ampliar $target con lo nuevo: el rango cubre los dos,
+     * los días se suman y el resto (tripulación, estado, notas) es lo nuevo.
+     *
+     * @return array<string, mixed>
+     */
+    public static function mergeInto(Scheduling $target, array $data): array
+    {
+        [$start, $end] = self::dateRange($data);
+
+        return [
+            ...$data,
+            'start_date' => min($target->start_date->toDateString(), $start),
+            'end_date' => max($target->end_date->toDateString(), $end),
+            'weekdays' => self::normalizeWeekdays([
+                ...array_map('intval', $target->weekdays ?? []),
+                ...self::normalizeWeekdays($data['weekdays'] ?? null),
+            ]),
+        ];
+    }
+
+    /**
+     * Rango del formulario como Y-m-d, o [null, null] si no se entiende.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    private static function dateRange(array $data): array
+    {
+        // Carbon::parse('') sería hoy, no "sin fecha".
+        if (blank($data['start_date'] ?? null) || blank($data['end_date'] ?? null)) {
+            return [null, null];
+        }
+
+        try {
+            return [
+                Carbon::parse((string) ($data['start_date'] ?? ''))->toDateString(),
+                Carbon::parse((string) ($data['end_date'] ?? ''))->toDateString(),
+            ];
+        } catch (\Throwable) {
+            return [null, null];
+        }
     }
 
     /** Validador completo, reglas base mas las cuatro del informe. */

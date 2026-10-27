@@ -33,15 +33,27 @@ class SchedulingController extends Controller
     {
         Scheduling::closeFinished();
 
-        // La fecha hace dos cosas: acota a las vigentes ese día y decide de
-        // qué día se muestra el estado. Llega marcada con hoy; vaciarla
-        // enseña todas.
+        // El rango acota a las vigentes en algún día entre "desde" y "hasta".
+        // Llega marcado con hoy en los dos extremos (las del día); vaciarlos
+        // enseña todas. Si el rango es un solo día, además decide de qué día
+        // se muestra el estado del recorrido.
+        $today = now()->toDateString();
         $filters = [
             'zone_id' => $request->query('zone_id'),
             'schedule_id' => $request->query('schedule_id'),
             'status' => $request->query('status'),
-            'date' => $request->has('date') ? $request->query('date') : now()->toDateString(),
+            'date_from' => $request->has('date_from') ? $request->query('date_from') : $today,
+            'date_to' => $request->has('date_to') ? $request->query('date_to') : $today,
         ];
+
+        // Un rango al revés se entiende igual: se ordenan los extremos.
+        if (filled($filters['date_from']) && filled($filters['date_to']) && $filters['date_from'] > $filters['date_to']) {
+            [$filters['date_from'], $filters['date_to']] = [$filters['date_to'], $filters['date_from']];
+        }
+
+        $filters['date'] = filled($filters['date_from']) && $filters['date_from'] === $filters['date_to']
+            ? $filters['date_from']
+            : null;
 
         $schedulings = Scheduling::query()
             ->with(Scheduling::RELATIONS)
@@ -77,6 +89,18 @@ class SchedulingController extends Controller
 
     public function store(SchedulingRequest $request): RedirectResponse
     {
+        // Mismo grupo, mismo turno y fechas cruzadas: se amplía la que había.
+        if ($target = $request->mergeTarget()) {
+            $target->saveAndSync($request->validated());
+
+            return redirect()->route('schedulings.index')->with(
+                'success',
+                "Ya existía la programación {$target->code} para ese grupo y turno: se actualizó al "
+                .$target->start_date->format('d/m/Y').' – '.$target->end_date->format('d/m/Y')
+                .' ('.$target->weekdaysLabel().').',
+            );
+        }
+
         $scheduling = (new Scheduling)->saveAndSync($request->validated());
         $count = $scheduling->vehicleRoutes()->count();
 

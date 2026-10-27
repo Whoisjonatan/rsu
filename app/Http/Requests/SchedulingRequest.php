@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Scheduling;
 use App\Services\Scheduling\SchedulingRules;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -15,6 +16,8 @@ use Illuminate\Validation\Rule;
  */
 class SchedulingRequest extends FormRequest
 {
+    private ?Scheduling $mergeTarget = null;
+
     public function authorize(): bool
     {
         return true;
@@ -58,6 +61,22 @@ class SchedulingRequest extends FormRequest
         // Los clientes que aún mandan un solo helper_id siguen funcionando.
         $helpers = $this->has('helper_ids') ? $this->input('helper_ids') : [$this->input('helper_id')];
         $this->merge(['helper_ids' => SchedulingRules::normalizeHelpers($helpers)]);
+
+        // Un alta que se cruza con una programación del mismo grupo y turno la
+        // amplía: se valida (y se guarda) ya con el rango y los días sumados.
+        if (! $this->route('scheduling')) {
+            $this->mergeTarget = SchedulingRules::mergeTarget($this->all());
+        }
+
+        if ($this->mergeTarget) {
+            $this->merge(SchedulingRules::mergeInto($this->mergeTarget, $this->all()));
+        }
+    }
+
+    /** La programación que este alta amplía en vez de crear otra, si la hay. */
+    public function mergeTarget(): ?Scheduling
+    {
+        return $this->mergeTarget;
     }
 
     public function withValidator(Validator $validator): void
@@ -70,8 +89,8 @@ class SchedulingRequest extends FormRequest
             return;
         }
 
-        // Al editar, la programacion no debe chocar consigo misma.
-        SchedulingRules::attachBusinessRules($validator, $this->route('scheduling')?->id);
+        // Al editar (o ampliar otra), la programacion no debe chocar consigo misma.
+        SchedulingRules::attachBusinessRules($validator, $this->route('scheduling')?->id ?? $this->mergeTarget?->id);
     }
 
     /**

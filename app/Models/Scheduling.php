@@ -39,7 +39,11 @@ class Scheduling extends Model
             // W17 filtra por fecha ("24/08/2026"): solo las vigentes ese día.
             ->when(filled($filters['date'] ?? null), fn ($q) => $q
                 ->whereDate('start_date', '<=', $filters['date'])
-                ->whereDate('end_date', '>=', $filters['date']));
+                ->whereDate('end_date', '>=', $filters['date']))
+            // Rango de fechas: las que se cruzan con él en al menos un día.
+            // Cualquiera de los dos extremos puede venir vacío y queda abierto.
+            ->when(filled($filters['date_from'] ?? null), fn ($q) => $q->whereDate('end_date', '>=', $filters['date_from']))
+            ->when(filled($filters['date_to'] ?? null), fn ($q) => $q->whereDate('start_date', '<=', $filters['date_to']));
     }
 
     /**
