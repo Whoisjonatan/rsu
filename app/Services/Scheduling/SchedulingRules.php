@@ -3,6 +3,7 @@
 namespace App\Services\Scheduling;
 
 use App\Models\Scheduling;
+use App\Models\StaffGroup;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\Zone;
@@ -19,7 +20,8 @@ use Illuminate\Validation\Rule;
  *
  * - el alta y la edicion de W18 (SchedulingRequest),
  * - la checklist en vivo del panel derecho de W18 (validar sin guardar),
- * - la edicion masiva de W19, que valida N filas en una sola peticion.
+ * - la programacion masiva de W19 (BulkScheduling), que valida N grupos en
+ *   una sola peticion.
  */
 class SchedulingRules
 {
@@ -46,9 +48,13 @@ class SchedulingRules
             'helper_ids.*' => ['integer', 'exists:users,id'],
             'weekdays' => ['required', 'array', 'min:1'],
             'weekdays.*' => ['integer', 'between:1,7'],
+            // Feriados que esta programación sí trabaja (ver Scheduling::occurrenceDates).
+            'worked_holidays' => ['nullable', 'array'],
+            'worked_holidays.*' => ['date_format:Y-m-d'],
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
-            'status' => ['required', Rule::in(['activa', 'inactiva'])],
+            // "reprogramada" no se elige: la pone Scheduling::reschedule().
+            'status' => ['required', Rule::in(['activa', 'inactiva', 'reprogramada'])],
             'notes' => ['nullable', 'string', 'max:500'],
         ];
     }
@@ -125,12 +131,23 @@ class SchedulingRules
     /**
      * Lo que queda al ampliar $target con lo nuevo: el rango cubre los dos,
      * los días se suman y el resto (tripulación, estado, notas) es lo nuevo.
+     * Los feriados trabajados de lo nuevo mandan en su rango; fuera de él se
+     * conservan los que ya tenía.
      *
      * @return array<string, mixed>
      */
     public static function mergeInto(Scheduling $target, array $data): array
     {
         [$start, $end] = self::dateRange($data);
+
+        $worked = $target->worked_holidays ?? [];
+
+        if (array_key_exists('worked_holidays', $data)) {
+            $worked = [
+                ...array_filter($worked, fn (string $date) => $date < $start || $date > $end),
+                ...($data['worked_holidays'] ?? []),
+            ];
+        }
 
         return [
             ...$data,
@@ -140,7 +157,25 @@ class SchedulingRules
                 ...array_map('intval', $target->weekdays ?? []),
                 ...self::normalizeWeekdays($data['weekdays'] ?? null),
             ]),
+            'worked_holidays' => self::normalizeDates($worked),
         ];
+    }
+
+    /**
+     * Fechas Y-m-d únicas y ordenadas.
+     *
+     * @return list<string>
+     */
+    public static function normalizeDates(mixed $dates): array
+    {
+        if (! is_array($dates)) {
+            return [];
+        }
+
+        $dates = array_values(array_unique(array_filter($dates, 'is_string')));
+        sort($dates);
+
+        return $dates;
     }
 
     /**
@@ -165,15 +200,19 @@ class SchedulingRules
         }
     }
 
-    /** Validador completo, reglas base mas las cuatro del informe. */
-    public static function validator(array $data, ?int $ignoreId = null): ValidatorContract
+    /**
+     * Validador completo, reglas base mas las cuatro del informe.
+     *
+     * @param  list<int>  $ignoreGroupIds  Grupos cuya tripulación no reserva a nadie (ver checkGroupMembership).
+     */
+    public static function validator(array $data, ?int $ignoreId = null, array $ignoreGroupIds = []): ValidatorContract
     {
         $data['weekdays'] = self::normalizeWeekdays($data['weekdays'] ?? null);
         $data['helper_ids'] = self::normalizeHelpers($data['helper_ids'] ?? [$data['helper_id'] ?? null]);
 
         $validator = Validator::make($data, self::rules(), self::messages());
 
-        self::attachBusinessRules($validator, $ignoreId);
+        self::attachBusinessRules($validator, $ignoreId, $ignoreGroupIds);
 
         return $validator;
     }
@@ -181,10 +220,12 @@ class SchedulingRules
     /**
      * Las cuatro validaciones del informe. Se añaden sobre un validador ya
      * hecho para que el FormRequest pueda usarlas desde withValidator().
+     *
+     * @param  list<int>  $ignoreGroupIds  Grupos cuya tripulación no reserva a nadie (ver checkGroupMembership).
      */
-    public static function attachBusinessRules(ValidatorContract $validator, ?int $ignoreId = null): void
+    public static function attachBusinessRules(ValidatorContract $validator, ?int $ignoreId = null, array $ignoreGroupIds = []): void
     {
-        $validator->after(function (ValidatorContract $validator) use ($ignoreId) {
+        $validator->after(function (ValidatorContract $validator) use ($ignoreId, $ignoreGroupIds) {
             // Sin lo básico validado, lo de abajo no tiene datos fiables.
             if ($validator->errors()->isNotEmpty()) {
                 return;
@@ -208,13 +249,15 @@ class SchedulingRules
                 return;
             }
 
-            self::checkPerson($validator, (int) $data['driver_id'], 'driver_id', 'El conductor', $dates);
+            $driver = User::find((int) $data['driver_id']);
+            self::checkPerson($validator, (int) $data['driver_id'], 'driver_id', trim('El conductor '.$driver?->full_name), $dates);
 
             foreach (User::findMany($data['helper_ids']) as $helper) {
                 self::checkPerson($validator, $helper->id, 'helper_ids', "El ayudante {$helper->full_name}", $dates);
             }
 
-            self::checkOverlap($validator, $data, $ignoreId);
+            self::checkOverlap($validator, $data, $dates, $ignoreId);
+            self::checkGroupMembership($validator, $data, $dates, $ignoreGroupIds);
         });
     }
 
@@ -228,6 +271,7 @@ class SchedulingRules
     {
         return (new Scheduling([
             'weekdays' => self::normalizeWeekdays($data['weekdays'] ?? null),
+            'worked_holidays' => self::normalizeDates($data['worked_holidays'] ?? null),
             'start_date' => $data['start_date'] ?? null,
             'end_date' => $data['end_date'] ?? null,
         ]))->occurrenceDates();
@@ -317,14 +361,16 @@ class SchedulingRules
      * esten en dos sitios en el mismo turno. Exigir que coincidieran los cuatro
      * dejaria pasar al mismo conductor con dos vehiculos distintos a la vez.
      *
-     * Coincidir es solaparse en rango de fechas Y compartir algun dia de la
-     * semana: dos programaciones del mismo mes no chocan si una es de lunes y
-     * la otra de martes.
+     * Coincidir es tener recorrido el mismo día: dos programaciones del mismo
+     * mes no chocan si una es de lunes y la otra de martes. El aviso dice en
+     * qué fechas chocan.
+     *
+     * @param  list<string>  $dates
      */
-    private static function checkOverlap(ValidatorContract $validator, array $data, ?int $ignoreId): void
+    private static function checkOverlap(ValidatorContract $validator, array $data, array $dates, ?int $ignoreId): void
     {
         $candidates = Scheduling::query()
-            ->where('status', 'activa')
+            ->inForce()
             ->where('schedule_id', (int) $data['schedule_id'])
             ->when($ignoreId, fn ($q) => $q->whereKeyNot($ignoreId))
             ->whereDate('start_date', '<=', $data['end_date'])
@@ -332,11 +378,101 @@ class SchedulingRules
             ->with(['vehicle', 'helpers', 'zone'])
             ->get();
 
-        $weekdays = self::normalizeWeekdays($data['weekdays'] ?? null);
+        $crew = self::crew($data);
 
-        // Cada persona de esta programación, con el campo donde va su aviso.
-        // Una persona choca aunque en la otra tenga otra función: no puede
-        // ir de conductor en un vehículo y de ayudante en otro a la vez.
+        foreach ($candidates as $other) {
+            $shared = array_values(array_intersect($dates, $other->occurrenceDates()));
+
+            if ($shared === []) {
+                continue;
+            }
+
+            $clashes = [];
+
+            if ($other->vehicle_id === (int) $data['vehicle_id']) {
+                $clashes[] = ['vehicle_id', 'El vehículo '.($other->vehicle->plate ?? '')];
+            }
+
+            $otherCrew = [$other->driver_id, ...$other->helperIds()];
+
+            foreach ($crew as $personId => [$field, $who]) {
+                if (in_array($personId, $otherCrew, true)) {
+                    $clashes[] = [$field, $who];
+                }
+            }
+
+            foreach ($clashes as [$field, $what]) {
+                $validator->errors()->add($field, sprintf(
+                    '%s ya está programado en ese turno (%s, zona %s) en: %s.',
+                    trim($what),
+                    $other->code,
+                    $other->zone->name ?? '—',
+                    self::dateList($shared),
+                ));
+            }
+        }
+    }
+
+    /**
+     * Quien pertenece a un grupo de personal activo queda reservado para ese
+     * grupo en su turno y sus días, aunque el grupo todavía no esté
+     * programado: si no, al programar ese grupo después la persona ya
+     * estaría ocupada. En otro turno sí puede ir.
+     *
+     * No reservan a nadie el grupo de la propia programación ni los de
+     * $ignoreGroupIds: la programación masiva pasa los grupos del lote, que se
+     * comparan entre sí con la tripulación que de verdad llevan.
+     *
+     * @param  list<string>  $dates
+     * @param  list<int>  $ignoreGroupIds
+     */
+    private static function checkGroupMembership(ValidatorContract $validator, array $data, array $dates, array $ignoreGroupIds): void
+    {
+        $weekdays = array_values(array_unique(array_map(fn (string $date) => (int) date('N', strtotime($date)), $dates)));
+        $ignore = array_filter([...$ignoreGroupIds, (int) ($data['staffgroup_id'] ?? 0)]);
+
+        $groups = StaffGroup::active()
+            ->with('helpers:id')
+            ->where('schedule_id', (int) $data['schedule_id'])
+            ->when($ignore !== [], fn ($q) => $q->whereKeyNot($ignore))
+            ->orderBy('name')
+            ->get();
+
+        $crew = self::crew($data);
+
+        foreach ($groups as $group) {
+            $shared = array_intersect($weekdays, array_map('intval', $group->weekdays ?? []));
+
+            if ($shared === []) {
+                continue;
+            }
+
+            sort($shared);
+            $members = [(int) $group->driver_id, ...$group->helperIds()];
+
+            foreach ($crew as $personId => [$field, $who]) {
+                if (in_array($personId, $members, true)) {
+                    $validator->errors()->add($field, sprintf(
+                        '%s pertenece al grupo "%s" en ese turno (%s): no puede ir también en otro grupo del mismo turno.',
+                        $who,
+                        $group->name,
+                        implode(', ', array_map(fn (int $day) => Scheduling::WEEKDAY_LABELS[$day], $shared)),
+                    ));
+                }
+            }
+        }
+    }
+
+    /**
+     * Cada persona de la programación con el campo donde va su aviso y cómo
+     * se la nombra ("El ayudante Díaz Lozano, Ana"). Una persona choca aunque
+     * en la otra tenga otra función: no puede ir de conductor en un vehículo
+     * y de ayudante en otro a la vez.
+     *
+     * @return array<int, array{0: string, 1: string}>
+     */
+    private static function crew(array $data): array
+    {
         $crew = [(int) $data['driver_id'] => ['driver_id', 'El conductor']];
 
         foreach ($data['helper_ids'] ?? [] as $helperId) {
@@ -345,61 +481,52 @@ class SchedulingRules
 
         $names = User::findMany(array_keys($crew))->pluck('full_name', 'id');
 
-        foreach ($candidates as $other) {
-            if (array_intersect($weekdays, array_map('intval', $other->weekdays ?? [])) === []) {
-                continue;
-            }
-
-            $clashes = [];
-
-            if ($other->vehicle_id === (int) $data['vehicle_id']) {
-                $clashes[] = ['vehicle_id', 'El vehículo '.($other->vehicle->code ?? '')];
-            }
-
-            $otherCrew = [$other->driver_id, ...$other->helperIds()];
-
-            foreach ($crew as $personId => [$field, $role]) {
-                if (in_array($personId, $otherCrew, true)) {
-                    $clashes[] = [$field, $role.' '.($names[$personId] ?? '')];
-                }
-            }
-
-            foreach ($clashes as [$field, $what]) {
-                $validator->errors()->add($field, sprintf(
-                    '%s ya está programado en ese turno y esos días (%s, zona %s, del %s al %s).',
-                    trim($what),
-                    $other->code,
-                    $other->zone->name ?? '—',
-                    $other->start_date->format('d/m/Y'),
-                    $other->end_date->format('d/m/Y'),
-                ));
-            }
+        foreach ($crew as $personId => [$field, $role]) {
+            $crew[$personId] = [$field, trim($role.' '.($names[$personId] ?? ''))];
         }
+
+        return $crew;
+    }
+
+    /** @param  list<string>  $dates */
+    private static function describeDates(array $dates, int $total): string
+    {
+        return count($dates) === $total ? 'ninguna de las fechas programadas' : self::dateList($dates);
     }
 
     /**
-     * Un rango largo puede dejar decenas de fechas fuera; listarlas todas no
-     * cabe en el aviso del formulario.
+     * "03/05/2026 – 04/05/2026, 06/05/2026, 08/05/2026 y 10 fechas más": los
+     * días seguidos se juntan en un tramo y, pasado el límite, se cuentan.
+     * Un rango largo puede dejar decenas de fechas y no caben en un aviso.
      *
      * @param  list<string>  $dates
      */
-    private static function describeDates(array $dates, int $total): string
+    public static function dateList(array $dates, int $limit = 4): string
     {
         $format = fn (string $date) => date('d/m/Y', strtotime($date));
+        $segments = [];
 
-        if (count($dates) === $total) {
-            return 'ninguna de las fechas programadas';
+        foreach (self::normalizeDates($dates) as $date) {
+            $last = array_key_last($segments);
+
+            if ($last !== null && $date === date('Y-m-d', strtotime($segments[$last][1].' +1 day'))) {
+                $segments[$last][1] = $date;
+                $segments[$last][2]++;
+
+                continue;
+            }
+
+            $segments[] = [$date, $date, 1];
         }
 
-        if (count($dates) <= 3) {
-            return implode(', ', array_map($format, $dates));
-        }
+        $text = implode(', ', array_map(
+            fn (array $segment) => $segment[0] === $segment[1]
+                ? $format($segment[0])
+                : $format($segment[0]).' – '.$format($segment[1]),
+            array_slice($segments, 0, $limit),
+        ));
+        $rest = array_sum(array_column(array_slice($segments, $limit), 2));
 
-        return sprintf(
-            '%d de las %d fechas (la primera, el %s)',
-            count($dates),
-            $total,
-            $format($dates[0]),
-        );
+        return $rest > 0 ? sprintf('%s y %d %s más', $text, $rest, $rest === 1 ? 'fecha' : 'fechas') : $text;
     }
 }

@@ -116,7 +116,10 @@ Route::name('api.')->group(function () {
         Route::get('schedulings/defaults/{zone}', [SchedulingController::class, 'defaultsForZone']);
         // La checklist viva del panel derecho de W18: valida sin guardar.
         Route::post('schedulings/validate', [SchedulingController::class, 'validateDraft']);
-        // Edicion masiva (W19): mismos cambios a varias programaciones.
+        // Programación masiva (W19): varios grupos en un rango de fechas, de una vez.
+        Route::post('schedulings/bulk/validate', [SchedulingController::class, 'bulkValidate']);
+        Route::post('schedulings/bulk', [SchedulingController::class, 'bulkStore']);
+        // Edicion masiva: mismos cambios a varias programaciones (sin pantalla).
         Route::post('schedulings/bulk-update', [SchedulingController::class, 'bulkUpdate']);
         Route::patch('schedulings/{scheduling}/finish', [SchedulingController::class, 'finish']);
         Route::apiResource('schedulings', SchedulingController::class);

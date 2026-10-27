@@ -173,7 +173,7 @@ class StaffAvailability
 
         $schedulings = Scheduling::query()
             ->with(['helpers:id', 'schedule'])
-            ->where('status', 'activa')
+            ->inForce()
             ->where('schedule_id', $this->scheduleId)
             ->whereDate('end_date', '>=', now()->toDateString())
             ->when($this->ignoreGroupId, fn ($q) => $q->where(fn ($q) => $q

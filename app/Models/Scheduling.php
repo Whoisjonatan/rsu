@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Services\Scheduling\SchedulingRules;
 use App\Support\Sequence;
+use App\Support\Status;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -17,6 +18,9 @@ class Scheduling extends Model
 {
     /** Relaciones que pintan las listas y la ficha (W17, W18). */
     public const RELATIONS = ['zone', 'route', 'vehicle', 'schedule', 'driver', 'helpers'];
+
+    /** Estados de una programación que sigue en pie (ver scopeInForce). */
+    public const IN_FORCE = ['activa', 'reprogramada'];
 
     /**
      * Filtros del listado de W17. Los comparten el API y la vista Blade.
@@ -87,7 +91,9 @@ class Scheduling extends Model
     /**
      * Contadores de la barra superior de W17.
      *
-     * @return array{total: int, activas: int, vigentes: int, inactivas: int, finalizadas: int}
+     * "Activas" cuenta también las reprogramadas: siguen en pie.
+     *
+     * @return array{total: int, activas: int, vigentes: int, inactivas: int, finalizadas: int, reprogramadas: int}
      */
     public static function summary(): array
     {
@@ -95,14 +101,24 @@ class Scheduling extends Model
 
         return [
             'total' => static::count(),
-            'activas' => static::where('status', 'activa')->count(),
-            'vigentes' => static::where('status', 'activa')
+            'activas' => static::inForce()->count(),
+            'vigentes' => static::inForce()
                 ->where('start_date', '<=', $today)
                 ->where('end_date', '>=', $today)
                 ->count(),
             'inactivas' => static::where('status', 'inactiva')->count(),
             'finalizadas' => static::where('status', 'finalizada')->count(),
+            'reprogramadas' => static::where('status', 'reprogramada')->count(),
         ];
+    }
+
+    /**
+     * Las que siguen en pie: activas y reprogramadas. Son las que generan
+     * recorridos y ocupan vehículo y personal.
+     */
+    public function scopeInForce(Builder $query): Builder
+    {
+        return $query->whereIn('status', self::IN_FORCE);
     }
 
     /**
@@ -152,7 +168,7 @@ class Scheduling extends Model
 
     protected $fillable = [
         'zone_id', 'staffgroup_id', 'route_id', 'vehicle_id', 'schedule_id',
-        'driver_id', 'weekdays', 'start_date', 'end_date', 'status', 'notes',
+        'driver_id', 'weekdays', 'worked_holidays', 'start_date', 'end_date', 'status', 'notes',
     ];
 
     /**
@@ -185,14 +201,14 @@ class Scheduling extends Model
     }
 
     /**
-     * Pasa a "finalizada" las programaciones activas cuya fecha de término ya
+     * Pasa a "finalizada" las programaciones en pie cuya fecha de término ya
      * pasó. Se llama al mostrar el listado y una vez al día desde el
      * scheduler, así el estado queda bien aunque el scheduler no esté corriendo.
      */
     public static function closeFinished(): int
     {
         return static::query()
-            ->where('status', 'activa')
+            ->inForce()
             ->whereDate('end_date', '<', now()->toDateString())
             ->update(['status' => 'finalizada']);
     }
@@ -245,6 +261,7 @@ class Scheduling extends Model
     {
         return [
             'weekdays' => 'array',
+            'worked_holidays' => 'array',
             'start_date' => 'date',
             'end_date' => 'date',
         ];
@@ -306,6 +323,42 @@ class Scheduling extends Model
         $this->unsetRelation('helpers');
     }
 
+    /**
+     * Lo que muestra el modal "Ver detalles" del listado: datos generales,
+     * personal asignado e historial de cambios. Espera cargadas RELATIONS y
+     * history.
+     *
+     * @return array<string, mixed>
+     */
+    public function details(): array
+    {
+        return [
+            'code' => $this->code,
+            'status' => [Status::label('scheduling', $this->status), Status::tone('scheduling', $this->status)],
+            'zone' => $this->zone?->name,
+            'schedule' => $this->schedule?->label,
+            'vehicle' => $this->vehicle?->plate,
+            'dates' => $this->start_date->format('d/m/Y').' al '.$this->end_date->format('d/m/Y'),
+            'weekdays' => $this->weekdaysLabel(),
+            'crew' => [
+                ['role' => 'Conductor', 'name' => $this->driver?->full_name ?? '—'],
+                ...$this->helpers->values()->map(fn (User $helper, int $index) => [
+                    'role' => $this->helpers->count() > 1 ? 'Ayudante '.($index + 1) : 'Ayudante',
+                    'name' => $helper->full_name,
+                ]),
+            ],
+            // Del más reciente al más antiguo.
+            'changes' => $this->history->sortByDesc('id')->values()->map(fn (SchedulingChange $change) => [
+                'date' => $change->created_at->format('d/m/Y H:i'),
+                'type' => $change->typeLabel(),
+                'old' => $change->old_value ?? '—',
+                'new' => $change->new_value,
+                'reason' => $change->reason,
+                'description' => $change->description,
+            ])->all(),
+        ];
+    }
+
     /** "Pérez, Ana; Ruiz, Luis" para las listas. */
     public function helpersLabel(): string
     {
@@ -317,17 +370,27 @@ class Scheduling extends Model
         return $this->hasMany(VehicleRoute::class);
     }
 
+    /** Cambios de turno, vehículo o personal, del más antiguo al más reciente. */
+    public function history(): HasMany
+    {
+        return $this->hasMany(SchedulingChange::class)->orderBy('id');
+    }
+
     /**
      * Fechas que cubre la programacion, solo en los dias de semana marcados y
      * sin los feriados activos: un feriado no lleva recorrido, y por eso
-     * tampoco cuenta en las validaciones de contrato y vacaciones.
+     * tampoco cuenta en las validaciones de contrato y vacaciones. La
+     * excepción son los feriados que la programación trabaja (worked_holidays).
      *
      * @return list<string>
      */
     public function occurrenceDates(): array
     {
         $days = array_map('intval', $this->weekdays ?? []);
-        $holidays = Holiday::activeDatesBetween($this->start_date, $this->end_date);
+        $holidays = array_diff(
+            Holiday::activeDatesBetween($this->start_date, $this->end_date),
+            $this->worked_holidays ?? [],
+        );
 
         return collect(CarbonPeriod::create($this->start_date, $this->end_date))
             ->filter(fn ($date) => in_array($date->dayOfWeekIso, $days, true))

@@ -63,11 +63,10 @@
                 <x-lucide-calendar-days class="size-4" />
                 Calendario
             </a>
-            {{-- Deshabilitado hasta rehacerla como alta de varias programaciones a la vez. --}}
-            <button type="button" class="btn btn-secondary" disabled title="Próximamente">
+            <a href="{{ route('schedulings.bulk') }}" class="btn btn-secondary">
                 <x-lucide-layers class="size-4" />
                 Programación masiva
-            </button>
+            </a>
             <a href="{{ route('schedulings.create') }}" class="btn btn-primary">
                 <x-lucide-plus class="size-4" />
                 Programar
@@ -78,6 +77,8 @@
     <div x-data="{
         toDelete: null,
         toFinish: null,
+        toDetail: null,
+        detailPage: 1,
         get deleteAction() { return this.toDelete ? @js(route('schedulings.destroy', '__ID__')).replace('__ID__', this.toDelete.id) : '' },
         get finishAction() { return this.toFinish ? @js(route('schedulings.finish', '__ID__')).replace('__ID__', this.toFinish.id) : '' },
     }">
@@ -178,6 +179,11 @@
                                                 <x-lucide-flag class="size-3.5" />
                                             </button>
                                         @endunless
+                                        <button type="button" class="icon-btn" title="Ver detalles"
+                                            aria-label="Ver detalles de {{ $row->code }}"
+                                            @click="toDetail = @js($row->details()); detailPage = 1">
+                                            <x-lucide-eye class="size-3.5" />
+                                        </button>
                                         <button type="button" class="icon-btn icon-btn-danger" title="Eliminar"
                                             aria-label="Eliminar {{ $row->code }}"
                                             @click="toDelete = @js(['id' => $row->id, 'label' => $row->code])">
@@ -245,6 +251,107 @@
                     </button>
                 </x-modal.footer>
             </form>
+        </x-modal>
+
+        <x-modal show="toDetail" close="toDetail = null" size="lg" title-expr="'Programación ' + (toDetail?.code ?? '')"
+            description-expr="[toDetail?.zone, toDetail?.schedule].filter(Boolean).join(' · ')">
+            {{-- Con alto máximo: con mucho historial el modal no se sale de la pantalla. --}}
+            <x-modal.body class="max-h-[65vh] space-y-5 overflow-y-auto">
+                <dl class="grid gap-3 rounded-lg bg-stone-50 px-4 py-3 text-[12px] sm:grid-cols-4">
+                    <div>
+                        <dt class="text-stone-500">Estado</dt>
+                        <dd class="mt-0.5">
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset"
+                                :class="{
+                                    green: 'bg-brand-50 text-brand-700 ring-brand-600/20',
+                                    amber: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+                                    blue: 'bg-sky-50 text-sky-700 ring-sky-600/20',
+                                    slate: 'bg-stone-100 text-stone-600 ring-stone-500/20',
+                                }[toDetail?.status[1]] ?? ''"
+                                x-text="toDetail?.status[0]"></span>
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-stone-500">Vigencia</dt>
+                        <dd class="font-medium text-stone-800" x-text="toDetail?.dates"></dd>
+                    </div>
+                    <div>
+                        <dt class="text-stone-500">Días</dt>
+                        <dd class="font-medium text-stone-800" x-text="toDetail?.weekdays"></dd>
+                    </div>
+                    <div>
+                        <dt class="text-stone-500">Vehículo</dt>
+                        <dd class="font-mono font-medium text-stone-800" x-text="toDetail?.vehicle ?? '—'"></dd>
+                    </div>
+                </dl>
+
+                <section>
+                    <h3 class="mb-2 flex items-center gap-2 text-[13px] font-semibold text-stone-900">
+                        <x-lucide-users class="size-4 text-stone-500" />
+                        Personal asignado
+                    </h3>
+                    <div class="overflow-hidden rounded-lg border border-stone-200">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Rol</th>
+                                    <th>Nombre</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="member in toDetail?.crew ?? []" :key="member.role">
+                                    <tr>
+                                        <td class="text-stone-500" x-text="member.role"></td>
+                                        <td class="font-medium text-stone-900" x-text="member.name"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section>
+                    <h3 class="mb-2 flex items-center gap-2 text-[13px] font-semibold text-stone-900">
+                        <x-lucide-history class="size-4 text-stone-500" />
+                        Historial de cambios
+                    </h3>
+                    <div class="overflow-x-auto rounded-lg border border-stone-200">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Tipo</th>
+                                    <th>Anterior</th>
+                                    <th>Nuevo</th>
+                                    <th>Motivo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="(change, index) in (toDetail?.changes ?? []).slice((detailPage - 1) * 5, detailPage * 5)"
+                                    :key="detailPage + '-' + index">
+                                    <tr>
+                                        <td class="whitespace-nowrap" x-text="change.date"></td>
+                                        <td x-text="change.type"></td>
+                                        <td x-text="change.old"></td>
+                                        <td class="font-medium text-stone-900" x-text="change.new"></td>
+                                        <td class="whitespace-normal">
+                                            <span x-text="change.reason"></span>
+                                            <span x-show="change.description" class="mt-0.5 block text-[11px] text-stone-400" x-text="change.description"></span>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="!toDetail?.changes?.length">
+                                    <td colspan="5" class="py-6 text-center text-[12px] text-stone-500">Sin cambios registrados.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <x-pager page="detailPage" total="toDetail?.changes?.length ?? 0" per-page="5" />
+                    </div>
+                </section>
+            </x-modal.body>
+            <x-modal.footer>
+                <button type="button" class="btn btn-secondary" @click="toDetail = null">Cerrar</button>
+            </x-modal.footer>
         </x-modal>
 
         <x-confirm-delete title="Eliminar programación">

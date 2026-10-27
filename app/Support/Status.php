@@ -71,6 +71,8 @@ class Status
             'activa' => ['Activa', 'green'],
             'inactiva' => ['Inactiva', 'slate'],
             'finalizada' => ['Finalizada', 'blue'],
+            // Le cambiaron turno, vehículo o personal; sigue en pie como una activa.
+            'reprogramada' => ['Reprogramada', 'amber'],
         ],
     ];
 

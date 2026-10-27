@@ -13,6 +13,7 @@ use App\Models\UserType;
 use App\Models\Vehicle;
 use App\Models\VehicleRoute;
 use App\Models\Zone;
+use App\Services\Scheduling\Rescheduling;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -56,7 +57,8 @@ class SchedulingController extends Controller
             : null;
 
         $schedulings = Scheduling::query()
-            ->with(Scheduling::RELATIONS)
+            // El historial de cambios lo pide el modal "Ver detalles".
+            ->with([...Scheduling::RELATIONS, 'history'])
             ->filter($filters)
             ->orderByDesc('start_date')
             ->orderBy('id')
@@ -110,21 +112,50 @@ class SchedulingController extends Controller
         );
     }
 
-    /** W18 Edición individual. */
+    /**
+     * Modificar una programación: cambios de turno, vehículo o personal, cada
+     * uno con su motivo, y el historial de los que ya se hicieron.
+     */
     public function edit(Scheduling $scheduling): View|RedirectResponse
     {
         if ($scheduling->isFinished()) {
-            return redirect()->route('schedulings.index')->with('error', "La programación {$scheduling->code} ya finalizó: no se puede editar.");
+            return redirect()->route('schedulings.index')->with('error', "La programación {$scheduling->code} ya finalizó: no se puede modificar.");
         }
 
-        return view('schedulings.form', ['scheduling' => $scheduling, ...$this->formData($scheduling)]);
+        $scheduling->load([...Scheduling::RELATIONS, 'staffGroup', 'history.user']);
+        $data = $this->formData($scheduling);
+
+        return view('schedulings.reschedule', [
+            'scheduling' => $scheduling,
+            'schedules' => $data['schedules'],
+            // Operativos más el actual aunque esté en taller; como nuevo solo se ofrecen los operativos.
+            'vehicles' => $data['vehicles'],
+            'drivers' => $data['drivers'],
+            'helpers' => $data['helpers'],
+        ]);
     }
 
-    public function update(SchedulingRequest $request, Scheduling $scheduling): RedirectResponse
+    /** Aplica los cambios agregados en la pantalla: la programación queda "reprogramada". */
+    public function update(Request $request, Scheduling $scheduling): RedirectResponse
     {
-        $scheduling->saveAndSync($request->validated());
+        if ($scheduling->isFinished()) {
+            return redirect()->route('schedulings.index')->with('error', "La programación {$scheduling->code} ya finalizó: no se puede modificar.");
+        }
 
-        return redirect()->route('schedulings.index')->with('success', "Programación {$scheduling->code} actualizada.");
+        $input = $request->validate(Rescheduling::rules(), Rescheduling::messages());
+        $rescheduling = new Rescheduling($scheduling, $input['changes']);
+
+        if ($rescheduling->errors() !== []) {
+            return back()->withInput()->withErrors(['changes' => $rescheduling->errors()]);
+        }
+
+        $rescheduling->save($request->user()?->id);
+        $count = count($input['changes']);
+
+        return redirect()->route('schedulings.index')->with(
+            'success',
+            "Programación {$scheduling->code} reprogramada: {$count} ".($count === 1 ? 'cambio guardado.' : 'cambios guardados.'),
+        );
     }
 
     public function destroy(Scheduling $scheduling): RedirectResponse
@@ -151,23 +182,19 @@ class SchedulingController extends Controller
     }
 
     /**
-     * W19 Programación masiva. La lista va completa (sin paginar): para elegir a
-     * mano hay que ver todas las de la zona. Aplicar los cambios va al API,
-     * que valida fila a fila y devuelve qué se aplicó y qué no.
+     * W19 Programación masiva: todos los grupos de personal activos en un rango
+     * de fechas. Validar y guardar van al API (BulkScheduling), que revisa el
+     * lote entero y devuelve las inconsistencias grupo por grupo.
      */
-    public function bulk(Request $request): View
+    public function bulk(): View
     {
+        $data = $this->formData();
+
         return view('schedulings.bulk', [
-            'schedulings' => Scheduling::query()
-                ->with(['zone', 'schedule', 'vehicle'])
-                ->filter(['zone_id' => $request->query('zone_id')])
-                ->orderByDesc('start_date')
-                ->orderBy('id')
-                ->get(),
-            'zoneFilter' => $request->query('zone_id'),
-            ...$this->formData(),
-            // Aquí las zonas solo filtran lo ya programado: van todas, también las inactivas.
-            'zones' => Zone::orderBy('name')->get(['id', 'name']),
+            ...$data,
+            'groups' => $data['groups']->load(['zone', 'schedule', 'vehicle']),
+            // Pocos al año: van todos y la pantalla muestra los del rango.
+            'holidays' => Holiday::active()->orderBy('date')->get(['date', 'description']),
         ]);
     }
 

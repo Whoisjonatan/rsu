@@ -62,6 +62,11 @@ class SchedulingRequest extends FormRequest
         $helpers = $this->has('helper_ids') ? $this->input('helper_ids') : [$this->input('helper_id')];
         $this->merge(['helper_ids' => SchedulingRules::normalizeHelpers($helpers)]);
 
+        // El formulario no toca los feriados trabajados: al editar se valida con los que ya tiene.
+        if ($this->route('scheduling') && ! $this->has('worked_holidays')) {
+            $this->merge(['worked_holidays' => $this->route('scheduling')->worked_holidays ?? []]);
+        }
+
         // Un alta que se cruza con una programación del mismo grupo y turno la
         // amplía: se valida (y se guarda) ya con el rango y los días sumados.
         if (! $this->route('scheduling')) {

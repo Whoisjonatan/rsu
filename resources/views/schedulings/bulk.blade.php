@@ -1,15 +1,25 @@
-{{-- W19 Programación masiva. Estado y llamadas al API en resources/js/components/bulk-edit.js. --}}
+{{-- W19 Programación masiva. Estado y llamadas al API en resources/js/components/bulk-scheduling.js. --}}
 @php
-    $fields = [
-        'schedule_id' => ['Cambiar turno', $schedules->map(fn ($row) => [$row->id, $row->label])],
-        'vehicle_id' => ['Cambiar vehículo', $vehicles->map(fn ($row) => [$row->id, $row->plate])],
-        'driver_id' => ['Cambiar conductor', $drivers->map(fn ($row) => [$row->id, $row->full_name])],
-        'helper_ids' => ['Cambiar ayudantes', $helpers->map(fn ($row) => [$row->id, $row->full_name])],
-        'end_date' => ['Cambiar fecha de término', null],
+    $catalogs = [
+        'groups' => $groups->map(fn ($group) => [
+            ...$group->schedulingDefaults(),
+            'zone' => $group->zone?->name,
+            'schedule' => $group->schedule?->name,
+            'schedule_label' => $group->schedule?->label,
+            'plate' => $group->vehicle?->plate,
+            'operational' => $group->vehicle?->status === 'operativo',
+            'seats' => $group->vehicle?->helperSeats() ?? 0,
+            'days' => $group->weekdaysLabel(),
+        ])->values(),
+        'helpers' => $helpers->map->only('id', 'full_name'),
+        'holidays' => $holidays->map(fn ($holiday) => [
+            'date' => $holiday->date->toDateString(),
+            'description' => $holiday->description,
+        ]),
     ];
 @endphp
 
-<x-layouts.app title="Programación masiva" subtitle="Marca las programaciones que quieres cambiar">
+<x-layouts.app title="Programación masiva" subtitle="Programación › Varios grupos en un rango de fechas">
     <x-slot:actions>
         <a href="{{ route('schedulings.index') }}" class="btn btn-secondary">
             <x-lucide-arrow-left class="size-4" />
@@ -17,150 +27,276 @@
         </a>
     </x-slot:actions>
 
-    <div class="grid gap-4 lg:grid-cols-[1fr_22rem]" x-data="bulkEdit({ ids: @js($schedulings->pluck('id')) })">
+    <div class="space-y-4" x-data="bulkScheduling({ catalogs: @js($catalogs) })">
         <x-card>
-            <header class="border-b border-stone-200 px-5 py-3.5">
-                <h2 class="text-sm font-semibold text-stone-900">Programaciones seleccionadas</h2>
-                <p class="mt-0.5 text-[12px] text-stone-500"
-                    x-text="selected.length > 0
-                        ? selected.length + (selected.length === 1 ? ' programación seleccionada' : ' programaciones seleccionadas') + '. Se aplicarán los mismos cambios a todas.'
-                        : 'Se aplicarán los mismos cambios a todas las filas marcadas.'"></p>
-            </header>
+            <x-card-header title="Rango de fechas"
+                description="Se programan todos los grupos marcados del inicio al término, en los días de cada grupo." />
 
-            <div class="flex flex-wrap items-center gap-2 border-b border-stone-200 p-3">
-                <button type="button" class="btn btn-secondary btn-sm" @click="selectAll()">Seleccionar todas</button>
-                <button type="button" class="btn btn-secondary btn-sm" @click="selected = []">Quitar selección</button>
+            <div class="space-y-4 p-5">
+                <div class="grid gap-4 sm:grid-cols-3">
+                    <x-field label="Fecha de inicio" for="start_date" required>
+                        <input id="start_date" type="date" x-model="form.start_date" class="field" required>
+                    </x-field>
+                    <x-field label="Fecha de término" for="end_date" required>
+                        <input id="end_date" type="date" x-model="form.end_date" :min="form.start_date" class="field" required>
+                    </x-field>
+                    <x-field label="Turno" for="schedule_id">
+                        <select id="schedule_id" x-model="form.schedule_id" @change="page = 1" class="field">
+                            <option value="">Todos los turnos</option>
+                            @foreach ($schedules as $schedule)
+                                <option value="{{ $schedule->id }}">{{ $schedule->label }}</option>
+                            @endforeach
+                        </select>
+                    </x-field>
+                </div>
 
-                <form method="GET" class="ml-auto" x-data @change="$el.requestSubmit()">
-                    <select name="zone_id" class="field w-auto min-w-44" aria-label="Filtrar por zona">
-                        <option value="">Zona: todas</option>
-                        @foreach ($zones as $zone)
-                            <option value="{{ $zone->id }}" @selected($zoneFilter == $zone->id)>{{ $zone->name }}</option>
-                        @endforeach
-                    </select>
-                </form>
+                {{-- Marcado = no se programa ese día, aunque el grupo trabaje ese día de la semana. --}}
+                <div x-show="form.start_date && form.end_date" x-cloak
+                    class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-[12px] text-blue-800">
+                    <p class="flex items-start gap-2 font-medium">
+                        <x-lucide-calendar-x class="mt-px size-3.5 shrink-0" />
+                        <span x-text="holidays.length === 0
+                            ? 'No hay feriados en este rango.'
+                            : (holidays.length === 1 ? 'Feriado encontrado' : holidays.length + ' feriados encontrados') + ': los marcados no se programan.'"></span>
+                    </p>
+                    <div x-show="holidays.length" class="mt-2 flex flex-wrap gap-2 pl-5.5">
+                        <template x-for="holiday in holidays" :key="holiday.date">
+                            <label class="flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 transition"
+                                :class="isSkipped(holiday.date) ? 'border-blue-300 bg-white' : 'border-amber-300 bg-amber-50 text-amber-800'">
+                                <input type="checkbox" class="size-4 accent-brand-600" :checked="isSkipped(holiday.date)"
+                                    @change="toggleHoliday(holiday.date)">
+                                <span>
+                                    <span class="font-medium" x-text="holidayDay(holiday.date)"></span>
+                                    <span x-show="holiday.description" x-text="'· ' + holiday.description"></span>
+                                    <span x-show="!isSkipped(holiday.date)" class="font-medium">(se trabaja)</span>
+                                </span>
+                            </label>
+                        </template>
+                    </div>
+                </div>
             </div>
-
-            <div class="space-y-2 p-3">
-                @forelse ($schedulings as $row)
-                    <label class="flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-[13px] transition"
-                        :class="selected.includes({{ $row->id }}) ? 'border-brand-300 bg-brand-50/60' : 'border-stone-200 hover:bg-stone-50'">
-                        <input type="checkbox" class="size-4 shrink-0 accent-brand-600" value="{{ $row->id }}"
-                            x-model.number="selected">
-                        <span class="w-20 shrink-0 font-mono font-medium text-stone-900">{{ $row->code }}</span>
-                        <span class="flex-1 truncate text-stone-600">{{ $row->zone?->name }}</span>
-                        <span class="w-20 shrink-0 text-stone-500">{{ $row->schedule?->name }}</span>
-                        <span class="w-24 shrink-0 font-mono text-stone-500">{{ $row->vehicle?->plate }}</span>
-
-                        {{-- Tras aplicar, la fila dice qué le pasó: sin esto solo se ve un total. --}}
-                        <span x-show="outcome({{ $row->id }})?.ok" x-cloak
-                            class="flex shrink-0 items-center gap-1 text-[11px] font-medium text-brand-700">
-                            <x-lucide-check class="size-3.5" /> Aplicado
-                        </span>
-                        <span x-show="outcome({{ $row->id }}) && !outcome({{ $row->id }}).ok" x-cloak
-                            :title="outcome({{ $row->id }})?.errors?.join(' · ')"
-                            class="flex shrink-0 items-center gap-1 text-[11px] font-medium text-amber-700">
-                            <x-lucide-triangle-alert class="size-3.5" /> Rechazado
-                        </span>
-                    </label>
-                @empty
-                    <p class="py-12 text-center text-[13px] text-stone-500">No hay programaciones en esta zona.</p>
-                @endforelse
-            </div>
-
-            @if ($schedulings->isNotEmpty())
-                <p class="border-t border-stone-200 px-4 py-3 text-[12px] text-stone-500"
-                    x-text="selected.length + ' de {{ $schedulings->count() }} seleccionadas'"></p>
-            @endif
         </x-card>
 
-        <div class="space-y-4">
-            <x-card>
-                <x-card-header title="Cambios a aplicar" />
-                <div class="space-y-4 p-5">
-                    @foreach ($fields as $key => [$label, $options])
-                        <div>
-                            <label class="mb-1.5 flex items-center gap-2 text-[12px] font-medium text-stone-700">
-                                <input type="checkbox" class="size-4 accent-brand-600" value="{{ $key }}" x-model="active">
-                                {{ $label }}
-                            </label>
-                            @if ($key === 'helper_ids')
-                                {{-- Reemplaza a todos los ayudantes; cuántos caben lo valida el vehículo de cada fila. --}}
-                                <select multiple size="5" class="field" :disabled="!active.includes('{{ $key }}')"
-                                    x-model="values.{{ $key }}" aria-label="{{ $label }}">
-                                    @foreach ($options as [$id, $text])
-                                        <option value="{{ $id }}">{{ $text }}</option>
-                                    @endforeach
-                                </select>
-                                <p class="mt-1 text-[11px] text-stone-500">Ctrl + clic para elegir varios. Sin elegir ninguno se quitan los ayudantes.</p>
-                            @elseif ($options)
-                                <select class="field" :disabled="!active.includes('{{ $key }}')" x-model="values.{{ $key }}"
-                                    aria-label="{{ $label }}">
-                                    <option value="" x-text="active.includes('{{ $key }}') ? 'Elige un valor' : 'Sin cambios'"></option>
-                                    @foreach ($options as [$id, $text])
-                                        <option value="{{ $id }}">{{ $text }}</option>
-                                    @endforeach
-                                </select>
-                            @else
-                                <input type="date" class="field" :disabled="!active.includes('{{ $key }}')"
-                                    x-model="values.{{ $key }}" aria-label="{{ $label }}">
-                            @endif
+        <x-card>
+            <x-card-header title="Grupos a programar"
+                description="Marca los grupos que entran. El conductor y los ayudantes de cada uno se pueden cambiar.">
+                <label class="flex shrink-0 cursor-pointer items-center gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-[12px] text-stone-600 hover:bg-stone-50">
+                    <input type="checkbox" class="size-4 accent-brand-600" :checked="allSelected" @change="toggleAll()">
+                    <span x-text="selectedRows.length + ' de ' + visibleRows.length + (visibleRows.length === 1 ? ' marcado' : ' marcados')"></span>
+                </label>
+            </x-card-header>
+
+            <div x-show="visibleRows.length > 0" class="flex flex-wrap items-center gap-2 border-b border-stone-200 px-4 py-3">
+                <div class="relative w-full sm:w-72">
+                    <x-lucide-search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-400" />
+                    <input type="search" x-model="search" @input="page = 1" class="field pl-9"
+                        placeholder="Buscar grupo o zona" aria-label="Buscar grupo o zona">
+                </div>
+                <p x-show="search.trim()" x-cloak class="text-[12px] text-stone-500"
+                    x-text="shownRows.length + (shownRows.length === 1 ? ' coincidencia' : ' coincidencias') + '. La búsqueda solo filtra lo que ves: los grupos marcados entran igual.'"></p>
+            </div>
+
+            <div class="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+                <template x-for="row in pagedRows" :key="row.id">
+                    <article class="flex flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition" :class="cardClass(row)"
+                        :id="'card-' + row.id">
+                        {{-- Toda la cabecera marca o desmarca el grupo. --}}
+                        <label class="flex cursor-pointer items-start gap-3 border-b border-stone-100 px-4 py-3"
+                            :class="row.include ? 'bg-brand-50/40' : 'bg-stone-50'">
+                            <input type="checkbox" class="mt-0.5 size-4 shrink-0 accent-brand-600" x-model="row.include"
+                                :aria-label="'Programar ' + group(row.id).name">
+                            <span class="min-w-0 flex-1">
+                                <span class="block truncate text-[14px] font-semibold text-stone-900" x-text="group(row.id).name"></span>
+                                <span class="mt-0.5 flex items-center gap-1 text-[11px] text-stone-500">
+                                    <x-lucide-map-pin class="size-3 shrink-0" />
+                                    <span x-text="group(row.id).zone ?? 'Sin zona'"></span>
+                                </span>
+                            </span>
+                            <span x-show="row.include && result(row.id)" class="shrink-0">
+                                <x-badge tone="red" x-show="result(row.id)?.status === 'error'">Con errores</x-badge>
+                                <x-badge tone="amber" x-show="result(row.id)?.status === 'warning'">Con advertencias</x-badge>
+                                <x-badge tone="green" x-show="result(row.id)?.status === 'ok'">Correcto</x-badge>
+                            </span>
+                        </label>
+
+                        <div class="space-y-2.5 px-4 py-3 text-[12px] text-stone-600">
+                            <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                                <span class="flex items-center gap-1.5" :title="group(row.id).schedule_label">
+                                    <x-lucide-clock class="size-3.5 text-stone-400" />
+                                    <span x-text="group(row.id).schedule_label ?? '—'"></span>
+                                </span>
+                                <span class="flex items-center gap-1.5">
+                                    <x-lucide-truck class="size-3.5 text-stone-400" />
+                                    <span class="font-mono" x-text="group(row.id).plate ?? '—'"></span>
+                                    <span x-show="!group(row.id).operational" class="font-medium text-amber-700">(no operativo)</span>
+                                </span>
+                            </div>
+                            <div class="flex gap-1" aria-label="Días de trabajo">
+                                @foreach (\App\Models\Scheduling::WEEKDAY_LABELS as $day => $label)
+                                    <span class="w-9 rounded py-0.5 text-center text-[10px] font-semibold"
+                                        :class="group(row.id).weekdays.includes({{ $day }}) ? 'bg-brand-600 text-white' : 'bg-stone-100 text-stone-400'">{{ $label }}</span>
+                                @endforeach
+                            </div>
                         </div>
-                    @endforeach
-                </div>
 
-                {{-- Sale ANTES de aplicar: es una simulación, no el resultado. --}}
-                <div x-show="simulation && simulation.rechazadas.length > 0 && !result" x-cloak
-                    class="mx-5 mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                    <p class="flex items-start gap-2 text-[12px] font-medium text-amber-800">
-                        <x-lucide-triangle-alert class="mt-px size-3.5 shrink-0" />
-                        <span x-text="simulation?.rechazadas.length + (simulation?.rechazadas.length === 1 ? ' programación quedaría rechazada' : ' programaciones quedarían rechazadas')"></span>
-                    </p>
-                    <ul class="mt-1.5 space-y-1 text-[11px] text-amber-700">
-                        <template x-for="row in (simulation?.rechazadas ?? []).slice(0, 3)" :key="row.id">
-                            <li><span class="font-mono font-semibold" x-text="row.code"></span>: <span x-text="row.errors[0]"></span></li>
-                        </template>
-                    </ul>
-                </div>
+                        <div class="mt-auto space-y-2 border-t border-stone-100 px-4 py-3">
+                            <div>
+                                <label class="label" :for="'driver_' + row.id">Conductor</label>
+                                <select :id="'driver_' + row.id" x-model="row.driver_id" :disabled="!row.include" class="field">
+                                    <option value="">Selecciona un conductor</option>
+                                    @foreach ($drivers as $person)
+                                        <option value="{{ $person->id }}">{{ $person->full_name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <template x-for="(helper, index) in row.helper_ids" :key="index">
+                                <div>
+                                    <label class="label" :for="'helper_' + row.id + '_' + index" x-text="'Ayudante ' + (index + 1)"></label>
+                                    <select :id="'helper_' + row.id + '_' + index" x-model="row.helper_ids[index]" :disabled="!row.include" class="field">
+                                        <option value="">Sin ayudante</option>
+                                        <template x-for="person in helperOptions(row, index)" :key="person.id">
+                                            <option :value="person.id" :selected="String(person.id) === String(row.helper_ids[index])"
+                                                x-text="person.full_name"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                            </template>
+                            <p x-show="row.helper_ids.length === 0" class="text-[12px] text-stone-400">Este vehículo solo lleva al conductor.</p>
+                        </div>
 
-                <p class="px-5 pb-3 text-[11px] text-stone-500">
-                    El sistema rechazará las filas que incumplan una validación y aplicará el resto.
+                        {{-- Tras validar: lo esencial aquí; el detalle, en el resultado de abajo. --}}
+                        <button type="button" x-show="row.include && result(row.id)" @click="showResult(row.id)"
+                            class="flex cursor-pointer items-center justify-between gap-2 border-t px-4 py-2 text-left text-[11px] font-medium"
+                            :class="{
+                                'border-red-100 bg-red-50 text-red-700': result(row.id)?.status === 'error',
+                                'border-amber-100 bg-amber-50 text-amber-700': result(row.id)?.status === 'warning',
+                                'border-brand-100 bg-brand-50 text-brand-700': result(row.id)?.status === 'ok',
+                            }">
+                            <span x-text="resultSummary(row.id)"></span>
+                            <x-lucide-arrow-down class="size-3.5 shrink-0" />
+                        </button>
+                    </article>
+                </template>
+
+                <p x-show="visibleRows.length === 0" class="col-span-full py-12 text-center text-[13px] text-stone-500">
+                    @if ($groups->isEmpty())
+                        No hay grupos de personal activos. <a href="{{ route('staffgroups.create') }}" class="link">Crea uno</a> para poder programar.
+                    @else
+                        Ningún grupo activo en este turno.
+                    @endif
                 </p>
+                <p x-show="visibleRows.length > 0 && shownRows.length === 0" x-cloak
+                    class="col-span-full py-12 text-center text-[13px] text-stone-500">
+                    Ningún grupo coincide con la búsqueda.
+                </p>
+            </div>
 
-                <div class="flex items-center justify-end gap-2 border-t border-stone-200 px-5 py-4">
-                    <a href="{{ route('schedulings.index') }}" class="btn btn-secondary">Cancelar</a>
-                    <button type="button" class="btn btn-primary" :disabled="!ready || busy" @click="apply()">
-                        <x-lucide-loader-circle class="size-4 animate-spin" x-show="busy" x-cloak />
-                        <x-lucide-layers class="size-4" x-show="!busy" />
-                        Aplicar cambios
-                    </button>
+            <x-pager page="page" total="shownRows.length" per-page="perPage" />
+
+            <div class="flex flex-wrap items-center justify-end gap-2 border-t border-stone-200 px-5 py-4">
+                <p x-show="hint" x-text="hint" class="mr-auto text-[12px] text-stone-500"></p>
+                <a href="{{ route('schedulings.index') }}" class="btn btn-secondary">Cancelar</a>
+                <button type="button" class="btn btn-secondary" :disabled="!complete || checking" @click="validate()">
+                    <x-lucide-loader-circle class="size-4 animate-spin" x-show="checking" x-cloak />
+                    <x-lucide-shield-check class="size-4" x-show="!checking" />
+                    Validar disponibilidad
+                </button>
+                <button type="button" class="btn btn-primary" :disabled="!canSave" @click="save()">
+                    <x-lucide-loader-circle class="size-4 animate-spin" x-show="saving" x-cloak />
+                    <x-lucide-save class="size-4" x-show="!saving" />
+                    Guardar programación masiva
+                </button>
+            </div>
+
+            <p x-show="error" x-text="error" x-cloak
+                class="mx-5 mb-5 rounded-md bg-red-50 px-3 py-2 text-[12px] font-medium text-red-700"></p>
+        </x-card>
+
+        {{-- Resultado de la validación general: un panel por grupo, abiertos los que tienen algo que corregir. --}}
+        <template x-if="report">
+            <x-card x-ref="report">
+                <header class="border-b border-stone-200 px-5 py-3.5">
+                    <h2 class="flex items-center gap-2 text-sm font-semibold"
+                        :class="report.valid ? 'text-brand-700' : 'text-red-600'">
+                        <x-lucide-triangle-alert class="size-4" x-show="!report.valid" />
+                        <x-lucide-circle-check class="size-4" x-show="report.valid" />
+                        Resultado de validación general
+                    </h2>
+                    <p class="mt-0.5 text-[12px] text-stone-500"
+                        x-text="report.totals.groups + (report.totals.groups === 1 ? ' grupo' : ' grupos')
+                            + ' · ' + report.totals.ok + ' correctos · ' + report.totals.warning + ' con advertencias · ' + report.totals.error + ' con errores'
+                            + ' · ' + report.totals.occurrences + (report.totals.occurrences === 1 ? ' recorrido' : ' recorridos')
+                            + (report.valid ? '. Ya puedes guardar.' : '. Corrige los errores y vuelve a validar.')"></p>
+                </header>
+
+                <div class="space-y-3 p-4">
+                    <template x-for="item in report.groups" :key="item.staffgroup_id">
+                        <div class="overflow-hidden rounded-lg border" :id="'result-' + item.staffgroup_id"
+                            :class="{ 'border-red-200': item.status === 'error', 'border-amber-200': item.status === 'warning', 'border-brand-200': item.status === 'ok' }">
+                            <button type="button" @click="toggleResult(item.staffgroup_id)"
+                                class="flex w-full cursor-pointer items-center gap-2 bg-sky-50/70 px-4 py-2.5 text-left">
+                                <x-lucide-users class="size-4 shrink-0 text-stone-600" />
+                                <span class="text-[13px] font-medium text-stone-900" x-text="item.name"></span>
+                                <span class="text-[11px] text-stone-500" x-text="'- ' + (item.zone ?? '—') + ' - ' + (item.schedule ?? '—')"></span>
+                                <span class="ml-auto flex shrink-0 items-center gap-1.5">
+                                    <x-badge tone="red" x-show="item.errors.length">Con errores</x-badge>
+                                    <x-badge tone="amber" x-show="item.warnings.length">Con advertencias</x-badge>
+                                    <x-badge tone="green" x-show="item.status === 'ok'">Correcto</x-badge>
+                                    <x-lucide-chevron-up class="size-4 text-stone-500 transition"
+                                        x-bind:class="collapsed.includes(item.staffgroup_id) && 'rotate-180'" />
+                                </span>
+                            </button>
+
+                            <div x-show="!collapsed.includes(item.staffgroup_id)"
+                                class="space-y-2.5 border-l-4 px-4 py-3 text-[12px]"
+                                :class="{ 'border-l-red-500 bg-red-50': item.status === 'error', 'border-l-amber-400 bg-amber-50/60': item.status === 'warning', 'border-l-brand-500 bg-brand-50/50': item.status === 'ok' }">
+                                <p x-show="item.uncovered" class="flex items-start gap-1.5 text-sky-700">
+                                    <x-lucide-calendar-days class="mt-px size-3.5 shrink-0" />
+                                    <span><span class="font-semibold">Días no cubiertos:</span> <span x-text="item.uncovered"></span></span>
+                                </p>
+                                <p x-show="item.holidays" class="flex items-start gap-1.5 text-sky-700">
+                                    <x-lucide-calendar-x class="mt-px size-3.5 shrink-0" />
+                                    <span x-text="item.holidays"></span>
+                                </p>
+
+                                <div x-show="item.errors.length">
+                                    <p class="flex items-center gap-1.5 font-semibold text-red-600">
+                                        <x-lucide-circle-x class="size-3.5" /> Errores:
+                                    </p>
+                                    <ul class="mt-1 list-disc space-y-0.5 pl-5 text-red-600">
+                                        <template x-for="message in item.errors" :key="message">
+                                            <li x-text="message"></li>
+                                        </template>
+                                    </ul>
+                                </div>
+
+                                <div x-show="item.warnings.length">
+                                    <p class="flex items-center gap-1.5 font-semibold text-amber-700">
+                                        <x-lucide-triangle-alert class="size-3.5" /> Advertencias:
+                                    </p>
+                                    <ul class="mt-1 list-disc space-y-0.5 pl-5 text-amber-700">
+                                        <template x-for="message in item.warnings" :key="message">
+                                            <li x-text="message"></li>
+                                        </template>
+                                    </ul>
+                                </div>
+
+                                <p x-show="!item.errors.length" class="flex items-center gap-1.5 font-medium text-brand-700">
+                                    <x-lucide-circle-check class="size-3.5" />
+                                    <span x-text="'Sin errores: generará ' + item.occurrences + (item.occurrences === 1 ? ' recorrido.' : ' recorridos.')"></span>
+                                </p>
+
+                                {{-- Con varias páginas la card puede no estar a la vista. --}}
+                                <button type="button" x-show="item.errors.length" @click="goToCard(item.staffgroup_id)"
+                                    class="link inline-flex cursor-pointer items-center gap-1 text-[12px]">
+                                    <x-lucide-pencil class="size-3.5" />
+                                    Corregir en su card
+                                </button>
+                            </div>
+                        </div>
+                    </template>
                 </div>
-
-                <p x-show="error" x-text="error" x-cloak
-                    class="mx-5 mb-5 rounded-md bg-red-50 px-3 py-2 text-[12px] font-medium text-red-700"></p>
             </x-card>
-
-            <template x-if="result">
-                <x-card>
-                    <header class="border-b border-stone-200 px-5 py-3.5">
-                        <h2 class="text-sm font-semibold text-stone-900">Resultado</h2>
-                        <p class="mt-0.5 text-[12px] text-stone-500" x-text="result.message"></p>
-                    </header>
-                    <div class="space-y-2 p-5 text-[12px]">
-                        <p x-show="result.aplicadas.length > 0" class="flex items-start gap-2 text-brand-700">
-                            <x-lucide-check class="mt-px size-3.5 shrink-0" />
-                            <span x-text="'Aplicado a ' + result.aplicadas.map((row) => row.code).join(', ')"></span>
-                        </p>
-                        <template x-for="row in result.rechazadas" :key="row.id">
-                            <p class="flex items-start gap-2 text-amber-700">
-                                <x-lucide-triangle-alert class="mt-px size-3.5 shrink-0" />
-                                <span><span class="font-mono font-semibold" x-text="row.code"></span>: <span x-text="row.errors[0]"></span></span>
-                            </p>
-                        </template>
-                        <a href="{{ request()->fullUrl() }}" class="link inline-block pt-1">Recargar la lista con los cambios →</a>
-                    </div>
-                </x-card>
-            </template>
-        </div>
+        </template>
     </div>
 </x-layouts.app>

@@ -10,6 +10,7 @@ use App\Models\Scheduling;
 use App\Models\User;
 use App\Models\UserType;
 use App\Models\Zone;
+use App\Services\Scheduling\BulkScheduling;
 use App\Services\Scheduling\SchedulingRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -112,6 +113,11 @@ class SchedulingController extends Controller
         $data = $request->all();
         $ignoreId = $request->integer('id') ?: null;
 
+        // El formulario no toca los feriados trabajados: al editar se valida con los que ya tiene.
+        if ($ignoreId && ! array_key_exists('worked_holidays', $data)) {
+            $data['worked_holidays'] = Scheduling::find($ignoreId)?->worked_holidays ?? [];
+        }
+
         // Un alta que ampliaría otra programación se valida como lo que se
         // guardará: la existente con el rango y los días sumados.
         $target = $ignoreId ? null : SchedulingRules::mergeTarget($data);
@@ -141,7 +147,7 @@ class SchedulingController extends Controller
             ],
             'duplicidad' => [
                 'label' => 'Sin duplicidad de turno',
-                'ok' => ! str_contains($all, 'ya está programado'),
+                'ok' => ! str_contains($all, 'ya está programado') && ! str_contains($all, 'pertenece al grupo'),
             ],
             'vacaciones' => [
                 'label' => 'Personal sin vacaciones',
@@ -169,13 +175,15 @@ class SchedulingController extends Controller
 
     /**
      * Feriados activos del rango que caen en uno de los días marcados. Esos
-     * días no llevan recorrido; el mismo día de la semana siguiente sí.
+     * días no llevan recorrido (salvo los trabajados); el mismo día de la
+     * semana siguiente sí.
      *
      * @return list<array{date: string, description: string}>
      */
     private function holidaysSkipped(array $data): array
     {
         $weekdays = SchedulingRules::normalizeWeekdays($data['weekdays'] ?? null);
+        $worked = SchedulingRules::normalizeDates($data['worked_holidays'] ?? null);
 
         if ($weekdays === [] || blank($data['start_date'] ?? null) || blank($data['end_date'] ?? null)) {
             return [];
@@ -186,13 +194,62 @@ class SchedulingController extends Controller
             ->whereDate('date', '<=', $data['end_date'])
             ->orderBy('date')
             ->get()
-            ->filter(fn (Holiday $holiday) => in_array($holiday->date->dayOfWeekIso, $weekdays, true))
+            ->filter(fn (Holiday $holiday) => in_array($holiday->date->dayOfWeekIso, $weekdays, true)
+                && ! in_array($holiday->date->toDateString(), $worked, true))
             ->map(fn (Holiday $holiday) => [
                 'date' => $holiday->date->toDateString(),
                 'description' => $holiday->description,
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * Programación masiva (W19), "Validar disponibilidad": el resultado de la
+     * validación general, grupo por grupo, sin guardar nada.
+     */
+    public function bulkValidate(Request $request): JsonResponse
+    {
+        $bulk = new BulkScheduling($request->validate(BulkScheduling::rules(), BulkScheduling::messages()));
+
+        return response()->json($bulk->report());
+    }
+
+    /**
+     * Programación masiva (W19), guardar. Se vuelve a validar todo: si queda
+     * una sola inconsistencia no se guarda nada y se devuelve el resultado
+     * para corregirla.
+     */
+    public function bulkStore(Request $request): JsonResponse
+    {
+        $input = $request->validate(BulkScheduling::rules(), BulkScheduling::messages());
+        $bulk = new BulkScheduling($input);
+
+        if (! $bulk->isValid()) {
+            return response()->json([
+                'message' => 'Hay inconsistencias: corrígelas y vuelve a validar.',
+                ...$bulk->report(),
+            ], 422);
+        }
+
+        $totals = $bulk->save();
+        $message = sprintf(
+            'Programación masiva registrada: %s, %s y %s.',
+            $this->plural($totals['created'], 'programación nueva', 'programaciones nuevas'),
+            $this->plural($totals['merged'], 'ampliada', 'ampliadas'),
+            $this->plural($totals['routes'], 'recorrido', 'recorridos'),
+        );
+
+        // La pantalla vuelve al listado y el aviso sale allí.
+        if ($request->hasSession()) {
+            $request->session()->flash('success', $message);
+        }
+
+        return response()->json([
+            'message' => $message,
+            ...$totals,
+            'redirect' => route('schedulings.index', ['date_from' => $input['start_date'], 'date_to' => $input['end_date']]),
+        ], 201);
     }
 
     /**
