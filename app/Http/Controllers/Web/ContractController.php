@@ -27,6 +27,29 @@ class ContractController extends Controller
         return back()->with('success', "Contrato {$contract->code} actualizado.");
     }
 
+    /** Corta el contrato desde hoy: la persona deja de poder ser programada. */
+    public function deactivate(User $person, Contract $contract): RedirectResponse
+    {
+        abort_if($contract->user_id !== $person->id, 404);
+
+        if (! $contract->canBeDeactivated()) {
+            return back()->with('error', "El contrato {$contract->code} ya no está activo.");
+        }
+
+        $contract->forceFill(['deactivated_at' => now()->toDateString()])->save();
+
+        return back()->with('success', "Contrato {$contract->code} desactivado.");
+    }
+
+    public function reactivate(User $person, Contract $contract): RedirectResponse
+    {
+        abort_if($contract->user_id !== $person->id, 404);
+
+        $contract->forceFill(['deactivated_at' => null])->save();
+
+        return back()->with('success', "Contrato {$contract->code} reactivado.");
+    }
+
     public function destroy(User $person, Contract $contract): RedirectResponse
     {
         abort_if($contract->user_id !== $person->id, 404);

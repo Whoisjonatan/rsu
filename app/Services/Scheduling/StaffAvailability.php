@@ -92,7 +92,7 @@ class StaffAvailability
         }
 
         $contract = $person->contracts
-            ->filter(fn (Contract $c) => $c->coversDate($today) || $c->start_date->toDateString() > $today)
+            ->filter(fn (Contract $c) => $c->coversDate($today) || (! $c->isDeactivated() && $c->start_date->toDateString() > $today))
             ->sortBy('start_date')
             ->first();
 

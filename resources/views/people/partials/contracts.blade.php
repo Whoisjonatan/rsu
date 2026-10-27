@@ -3,6 +3,8 @@
     $regimes = ['Obrero municipal', 'Empleado municipal', 'Locación de servicios'];
 @endphp
 
+{{-- Por fuera del crud(): el modal de desactivar lleva su propio estado. --}}
+<div x-data="{ toDeactivate: null }">
 <div class="space-y-5" x-data="crud({
     name: 'contract',
     storeUrl: @js(route('contracts.store', $person)),
@@ -51,9 +53,15 @@
                             <td class="text-right whitespace-nowrap tabular-nums">{{ $contract->salary_label }}</td>
                             <td>{{ $contract->probation_label }}</td>
                             <td>
-                                <x-badge :tone="$contract->is_active ? 'green' : 'slate'">
-                                    {{ $contract->is_active ? 'Vigente' : 'Culminado' }}
-                                </x-badge>
+                                @if ($contract->isDeactivated())
+                                    <span title="Desde el {{ $contract->deactivated_at->format('d/m/Y') }}">
+                                        <x-badge tone="red">Desactivado</x-badge>
+                                    </span>
+                                @else
+                                    <x-badge :tone="$contract->is_active ? 'green' : 'slate'">
+                                        {{ $contract->is_active ? 'Vigente' : 'Culminado' }}
+                                    </x-badge>
+                                @endif
                             </td>
                             <td>
                                 <x-row-actions :label="'contrato '.$contract->code" :row="[
@@ -64,7 +72,24 @@
                                     'end_date' => $contract->end_date?->toDateString(),
                                     'salary' => $contract->salary,
                                     'probation_months' => $contract->probation_months,
-                                ]" />
+                                ]">
+                                    @if ($contract->canBeDeactivated())
+                                        <button type="button" class="icon-btn" title="Desactivar"
+                                            aria-label="Desactivar contrato {{ $contract->code }}"
+                                            @click="toDeactivate = @js(['id' => $contract->id, 'label' => $contract->code])">
+                                            <x-lucide-power-off class="size-3.5" />
+                                        </button>
+                                    @elseif ($contract->isDeactivated())
+                                        <form method="POST" action="{{ route('contracts.reactivate', [$person, $contract]) }}">
+                                            @csrf
+                                            @method('PATCH')
+                                            <button type="submit" class="icon-btn" title="Reactivar"
+                                                aria-label="Reactivar contrato {{ $contract->code }}">
+                                                <x-lucide-power class="size-3.5" />
+                                            </button>
+                                        </form>
+                                    @endif
+                                </x-row-actions>
                             </td>
                         </tr>
                     @empty
@@ -149,7 +174,30 @@
         </p>
     </x-crud-form>
 
+    <x-modal show="toDeactivate" close="toDeactivate = null" size="sm" title="Desactivar contrato"
+        description-expr="toDeactivate?.label">
+        <form method="POST"
+            :action="toDeactivate ? @js(route('contracts.deactivate', [$person, '__ID__'])).replace('__ID__', toDeactivate.id) : ''">
+            @csrf
+            @method('PATCH')
+            <x-modal.body>
+                <p class="text-[13px] text-stone-600">
+                    El contrato deja de estar vigente desde hoy y la persona ya no podrá ser programada. Sus fechas
+                    pactadas se conservan y se puede reactivar más adelante.
+                </p>
+            </x-modal.body>
+            <x-modal.footer>
+                <button type="button" class="btn btn-secondary" @click="toDeactivate = null">Cancelar</button>
+                <button type="submit" class="btn btn-danger">
+                    <x-lucide-power-off class="size-4" />
+                    Desactivar
+                </button>
+            </x-modal.footer>
+        </form>
+    </x-modal>
+
     <x-confirm-delete title="Eliminar contrato">
         Al quitar el contrato vigente la persona dejará de poder ser programada.
     </x-confirm-delete>
+</div>
 </div>

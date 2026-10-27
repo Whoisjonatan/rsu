@@ -29,6 +29,7 @@ class Contract extends Model
         return [
             'start_date' => 'date:Y-m-d',
             'end_date' => 'date:Y-m-d',
+            'deactivated_at' => 'date:Y-m-d',
             'salary' => 'decimal:2',
             'probation_months' => 'integer',
         ];
@@ -39,12 +40,18 @@ class Contract extends Model
         return $this->belongsTo(User::class);
     }
 
-    /** Contratos vigentes en la fecha dada. */
+    /**
+     * Contratos vigentes en la fecha dada. Uno desactivado deja de cubrir
+     * desde el día en que se desactivó.
+     */
     public function scopeActiveOn(Builder $query, string $date): Builder
     {
         return $query->where('start_date', '<=', $date)
             ->where(function (Builder $q) use ($date) {
                 $q->whereNull('end_date')->orWhere('end_date', '>=', $date);
+            })
+            ->where(function (Builder $q) use ($date) {
+                $q->whereNull('deactivated_at')->orWhere('deactivated_at', '>', $date);
             });
     }
 
@@ -59,17 +66,28 @@ class Contract extends Model
             return false;
         }
 
+        if ($this->deactivated_at !== null && $this->deactivated_at->toDateString() <= $date) {
+            return false;
+        }
+
         return $this->end_date === null || $this->end_date->toDateString() >= $date;
     }
 
     protected function isActive(): Attribute
     {
-        return Attribute::get(function () {
-            $today = now()->startOfDay();
+        return Attribute::get(fn () => $this->coversDate(now()->toDateString()));
+    }
 
-            return $this->start_date <= $today
-                && ($this->end_date === null || $this->end_date >= $today);
-        });
+    public function isDeactivated(): bool
+    {
+        return $this->deactivated_at !== null;
+    }
+
+    /** Se puede desactivar mientras no lo esté ya y no haya terminado. */
+    public function canBeDeactivated(): bool
+    {
+        return ! $this->isDeactivated()
+            && ($this->end_date === null || $this->end_date->toDateString() >= now()->toDateString());
     }
 
     /** Columna DURACIÓN de W09: "2 meses" para eventuales, "—" para indefinidos. */

@@ -97,6 +97,8 @@ Route::middleware('auth')->group(function () {
     Route::post('personal/{person}/contratos', [ContractController::class, 'store'])->name('contracts.store');
     Route::put('personal/{person}/contratos/{contract}', [ContractController::class, 'update'])->name('contracts.update');
     Route::delete('personal/{person}/contratos/{contract}', [ContractController::class, 'destroy'])->name('contracts.destroy');
+    Route::patch('personal/{person}/contratos/{contract}/desactivar', [ContractController::class, 'deactivate'])->name('contracts.deactivate');
+    Route::patch('personal/{person}/contratos/{contract}/reactivar', [ContractController::class, 'reactivate'])->name('contracts.reactivate');
 
     Route::post('personal/{person}/vacaciones', [VacationController::class, 'store'])->name('vacations.store');
     Route::put('personal/{person}/vacaciones/{vacation}', [VacationController::class, 'update'])->name('vacations.update');
