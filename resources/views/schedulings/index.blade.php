@@ -154,7 +154,7 @@
                     <input type="date" name="date_to" value="{{ $dateTo }}" class="field w-auto min-w-36"
                         aria-label="Hasta esta fecha">
                     <a href="{{ route('schedulings.index', ['tab' => $tab, ...array_filter(\Illuminate\Support\Arr::only($filters, ['zone_id', 'schedule_id', 'status']))]) }}"
-                        class="btn btn-secondary" title="Volver a las de hoy">Hoy</a>
+                        class="btn btn-secondary" title="Volver al rango de hoy a un año">Hoy</a>
                 </div>
             </form>
 

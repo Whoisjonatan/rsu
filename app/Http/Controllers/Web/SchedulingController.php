@@ -42,16 +42,16 @@ class SchedulingController extends Controller
         $tab = $request->query('tab') === 'detallada' ? 'detallada' : 'general';
 
         // El rango acota a las vigentes en algún día entre "desde" y "hasta".
-        // Llega marcado con hoy en los dos extremos (las del día); vaciarlos
-        // enseña todas. Si el rango es un solo día, además decide de qué día
-        // se muestra el estado del recorrido.
+        // Llega de hoy a un año (lo que está por delante); vaciarlo enseña
+        // todas. Si el rango es un solo día, además decide de qué día se
+        // muestra el estado del recorrido.
         $today = now()->toDateString();
         $filters = [
             'zone_id' => $request->query('zone_id'),
             'schedule_id' => $request->query('schedule_id'),
             'status' => $request->query('status'),
             'date_from' => $request->has('date_from') ? $request->query('date_from') : $today,
-            'date_to' => $request->has('date_to') ? $request->query('date_to') : $today,
+            'date_to' => $request->has('date_to') ? $request->query('date_to') : now()->addYear()->toDateString(),
             // "Ver días" de una general: la Detallada solo con los suyos.
             'general_scheduling_id' => $tab === 'detallada' ? $request->query('general') : null,
         ];
