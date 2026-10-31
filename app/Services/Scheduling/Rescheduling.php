@@ -2,9 +2,9 @@
 
 namespace App\Services\Scheduling;
 
+use App\Models\ChangeReason;
 use App\Models\Schedule;
 use App\Models\Scheduling;
-use App\Models\SchedulingChange;
 use App\Models\User;
 use App\Models\UserType;
 use App\Models\Vehicle;
@@ -119,14 +119,17 @@ class Rescheduling
         $description = filled($change['description'] ?? null) ? trim((string) $change['description']) : null;
         $prefix = "Cambio {$number}";
 
-        if (! in_array($reason, SchedulingChange::REASONS[$section], true)) {
-            $this->errors[] = "{$prefix}: el motivo \"{$reason}\" no es válido.";
+        // Los motivos salen de Gestión de cambios: los de la sección y los generales.
+        $motive = ChangeReason::forSection($section)->where('name', $reason)->first();
+
+        if (! $motive) {
+            $this->errors[] = "{$prefix}: el motivo \"{$reason}\" no es válido para este cambio.";
 
             return;
         }
 
-        if ($reason === SchedulingChange::OTHER && $description === null) {
-            $this->errors[] = "{$prefix}: con el motivo \"Otro\" describe el motivo del cambio.";
+        if ($motive->requires_description && $description === null) {
+            $this->errors[] = "{$prefix}: con el motivo \"{$motive->name}\" describe el motivo del cambio.";
 
             return;
         }
@@ -200,6 +203,16 @@ class Rescheduling
 
         $people = User::with('usertype')->findMany([$oldId, $newId])->keyBy('id');
         $new = $people->get($newId);
+
+        // En la programación de un día, quien ya marcó asistencia está
+        // trabajando: solo se reemplaza al que falta.
+        $day = $this->scheduling->start_date->toDateString();
+
+        if ($this->scheduling->end_date->toDateString() === $day && $people->get($oldId)?->attendedOn($day)) {
+            $this->errors[] = "{$prefix}: {$people->get($oldId)->full_name} ya marcó asistencia ese día; solo se cambia al personal que falta.";
+
+            return null;
+        }
 
         if (! $new) {
             $this->errors[] = "{$prefix}: el nuevo personal no existe.";

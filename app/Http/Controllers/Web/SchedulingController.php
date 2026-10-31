@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SchedulingRequest;
+use App\Models\GeneralScheduling;
 use App\Models\Holiday;
 use App\Models\Schedule;
 use App\Models\Scheduling;
@@ -15,6 +16,7 @@ use App\Models\VehicleRoute;
 use App\Models\Zone;
 use App\Services\Scheduling\Rescheduling;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -29,10 +31,15 @@ use Illuminate\View\View;
  */
 class SchedulingController extends Controller
 {
-    /** W17 Listado de programaciones. */
+    /**
+     * W17 Listado de programaciones, en dos pestañas: "General" (lo que se
+     * registró, del X al Y) y "Detallada" (una fila por día).
+     */
     public function index(Request $request): View
     {
         Scheduling::closeFinished();
+
+        $tab = $request->query('tab') === 'detallada' ? 'detallada' : 'general';
 
         // El rango acota a las vigentes en algún día entre "desde" y "hasta".
         // Llega marcado con hoy en los dos extremos (las del día); vaciarlos
@@ -45,6 +52,8 @@ class SchedulingController extends Controller
             'status' => $request->query('status'),
             'date_from' => $request->has('date_from') ? $request->query('date_from') : $today,
             'date_to' => $request->has('date_to') ? $request->query('date_to') : $today,
+            // "Ver días" de una general: la Detallada solo con los suyos.
+            'general_scheduling_id' => $tab === 'detallada' ? $request->query('general') : null,
         ];
 
         // Un rango al revés se entiende igual: se ordenan los extremos.
@@ -56,21 +65,33 @@ class SchedulingController extends Controller
             ? $filters['date_from']
             : null;
 
-        $schedulings = Scheduling::query()
-            // El historial de cambios lo pide el modal "Ver detalles".
-            ->with([...Scheduling::RELATIONS, 'history'])
-            ->filter($filters)
-            ->orderByDesc('start_date')
-            ->orderBy('id')
-            ->paginate(10)
-            ->withQueryString();
+        if ($tab === 'general') {
+            $rows = GeneralScheduling::query()
+                // Los días los pide el estado y el modal "Ver detalles".
+                ->with([...GeneralScheduling::RELATIONS, 'schedulings' => fn ($q) => $q->with(['vehicle', 'schedule', 'driver', 'helpers'])])
+                ->filter($filters)
+                ->orderByDesc('start_date')
+                ->orderByDesc('id')
+                ->paginate(10)
+                ->withQueryString();
+        } else {
+            $rows = Scheduling::query()
+                // El historial de cambios lo pide el modal "Ver detalles".
+                ->with([...Scheduling::RELATIONS, 'history'])
+                ->filter($filters)
+                ->orderBy('start_date')
+                ->orderBy('schedule_id')
+                ->orderBy('id')
+                ->paginate(15)
+                ->withQueryString();
 
-        if (filled($filters['date'])) {
-            Scheduling::attachDayStatus($schedulings->getCollection(), $filters['date']);
+            Scheduling::attachRouteStatus($rows->getCollection());
         }
 
         return view('schedulings.index', [
-            'schedulings' => $schedulings,
+            'tab' => $tab,
+            'rows' => $rows,
+            'general' => filled($filters['general_scheduling_id']) ? GeneralScheduling::find($filters['general_scheduling_id']) : null,
             'filters' => $filters,
             'summary' => Scheduling::summary(),
             'zones' => Zone::orderBy('name')->get(['id', 'name']),
@@ -89,27 +110,43 @@ class SchedulingController extends Controller
         ]);
     }
 
+    /**
+     * Registra la programación general y la desglosa en una por día. Si el
+     * grupo ya tenía una general en ese turno que se cruza, los días nuevos
+     * se suman a esa; los que ya tenía programados se quedan como están.
+     */
     public function store(SchedulingRequest $request): RedirectResponse
     {
-        // Mismo grupo, mismo turno y fechas cruzadas: se amplía la que había.
-        if ($target = $request->mergeTarget()) {
-            $target->saveAndSync($request->validated());
+        $target = $request->mergeTarget();
+        $days = GeneralScheduling::register($request->validated(), $request->skipDates(), $target);
+        $general = $days->first()->general;
+        $count = $days->count();
+        $kept = count($request->skipDates());
 
-            return redirect()->route('schedulings.index')->with(
-                'success',
-                "Ya existía la programación {$target->code} para ese grupo y turno: se actualizó al "
-                .$target->start_date->format('d/m/Y').' – '.$target->end_date->format('d/m/Y')
-                .' ('.$target->weekdaysLabel().').',
+        $message = $target
+            ? sprintf(
+                'Se %s %s a la programación %s, que ahora va del %s al %s.',
+                $count === 1 ? 'sumó' : 'sumaron',
+                $count === 1 ? '1 día' : "{$count} días",
+                $general->code,
+                $general->start_date->format('d/m/Y'),
+                $general->end_date->format('d/m/Y'),
+            )
+            : sprintf(
+                'Programación %s registrada: %s.',
+                $general->code,
+                $count === 1 ? '1 programación individual' : "{$count} programaciones individuales, una por día",
             );
+
+        if ($kept > 0) {
+            $message .= sprintf(' %s ya %s programados y se mantienen.', $kept === 1 ? '1 día' : "{$kept} días", $kept === 1 ? 'estaba' : 'estaban');
         }
 
-        $scheduling = (new Scheduling)->saveAndSync($request->validated());
-        $count = $scheduling->vehicleRoutes()->count();
-
-        return redirect()->route('schedulings.index')->with(
-            'success',
-            "Programación {$scheduling->code} registrada: {$count} ".($count === 1 ? 'recorrido generado.' : 'recorridos generados.'),
-        );
+        return redirect()->route('schedulings.index', [
+            'tab' => 'general',
+            'date_from' => $request->validated('start_date'),
+            'date_to' => $request->validated('end_date'),
+        ])->with('success', $message);
     }
 
     /**
@@ -135,27 +172,41 @@ class SchedulingController extends Controller
         ]);
     }
 
-    /** Aplica los cambios agregados en la pantalla: la programación queda "reprogramada". */
-    public function update(Request $request, Scheduling $scheduling): RedirectResponse
+    /**
+     * Aplica los cambios agregados en la pantalla: la programación queda
+     * "reprogramada". Los modales del Dashboard mandan lo mismo por JSON y,
+     * si se guarda, recargan la página para enseñar el aviso.
+     */
+    public function update(Request $request, Scheduling $scheduling): RedirectResponse|JsonResponse
     {
         if ($scheduling->isFinished()) {
-            return redirect()->route('schedulings.index')->with('error', "La programación {$scheduling->code} ya finalizó: no se puede modificar.");
+            $message = "La programación {$scheduling->code} ya finalizó: no se puede modificar.";
+
+            return $request->expectsJson()
+                ? response()->json(['message' => $message], 409)
+                : redirect()->route('schedulings.index')->with('error', $message);
         }
 
         $input = $request->validate(Rescheduling::rules(), Rescheduling::messages());
         $rescheduling = new Rescheduling($scheduling, $input['changes']);
 
         if ($rescheduling->errors() !== []) {
-            return back()->withInput()->withErrors(['changes' => $rescheduling->errors()]);
+            return $request->expectsJson()
+                ? response()->json(['message' => $rescheduling->errors()[0], 'errors' => ['changes' => $rescheduling->errors()]], 422)
+                : back()->withInput()->withErrors(['changes' => $rescheduling->errors()]);
         }
 
         $rescheduling->save($request->user()?->id);
         $count = count($input['changes']);
+        $message = "Programación {$scheduling->code} reprogramada: {$count} ".($count === 1 ? 'cambio guardado.' : 'cambios guardados.');
 
-        return redirect()->route('schedulings.index')->with(
-            'success',
-            "Programación {$scheduling->code} reprogramada: {$count} ".($count === 1 ? 'cambio guardado.' : 'cambios guardados.'),
-        );
+        if ($request->expectsJson()) {
+            session()->flash('success', $message);
+
+            return response()->json(['message' => $message]);
+        }
+
+        return redirect()->route('schedulings.index')->with('success', $message);
     }
 
     public function destroy(Scheduling $scheduling): RedirectResponse
@@ -179,6 +230,31 @@ class SchedulingController extends Controller
         $scheduling->finish();
 
         return back()->with('success', "Programación {$scheduling->code} finalizada.");
+    }
+
+    /** Elimina la general con todos sus días, si ninguno arrancó. */
+    public function destroyGeneral(GeneralScheduling $general): RedirectResponse
+    {
+        if ($blocker = $general->deletionBlocker()) {
+            return back()->with('error', $blocker);
+        }
+
+        $count = $general->schedulings()->count();
+        $general->delete();
+
+        return back()->with('success', "Programación {$general->code} eliminada con sus {$count} ".($count === 1 ? 'día.' : 'días.'));
+    }
+
+    /** Finaliza hoy todos los días en pie de la general (ver GeneralScheduling::finish). */
+    public function finishGeneral(GeneralScheduling $general): RedirectResponse
+    {
+        if ($blocker = $general->finishBlocker()) {
+            return back()->with('error', $blocker);
+        }
+
+        $general->finish();
+
+        return back()->with('success', "Programación {$general->code} finalizada.");
     }
 
     /**

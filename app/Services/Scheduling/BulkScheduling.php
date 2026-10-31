@@ -2,10 +2,11 @@
 
 namespace App\Services\Scheduling;
 
+use App\Models\GeneralScheduling;
 use App\Models\Holiday;
-use App\Models\Scheduling;
 use App\Models\StaffGroup;
 use App\Models\User;
+use App\Models\VehicleRoute;
 use Carbon\CarbonPeriod;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -124,18 +125,22 @@ class BulkScheduling
     /**
      * Guarda todo el lote en una transacción. Solo se llama si isValid().
      *
-     * @return array{created: int, merged: int, routes: int}
+     * Cada grupo queda como una programación general desglosada en una por
+     * día (ver GeneralScheduling::register).
+     *
+     * @return array{created: int, merged: int, days: int, routes: int}
      */
     public function save(): array
     {
-        $totals = ['created' => 0, 'merged' => 0, 'routes' => 0];
+        $totals = ['created' => 0, 'merged' => 0, 'days' => 0, 'routes' => 0];
 
         DB::transaction(function () use (&$totals) {
             foreach ($this->entries as $entry) {
-                $scheduling = ($entry['target'] ?? new Scheduling)->saveAndSync($entry['validator']->validated());
+                $days = GeneralScheduling::register($entry['validator']->validated(), $entry['kept'], $entry['target']);
 
                 $totals[$entry['target'] ? 'merged' : 'created']++;
-                $totals['routes'] += $scheduling->vehicleRoutes()->count();
+                $totals['days'] += $days->count();
+                $totals['routes'] += VehicleRoute::whereIn('scheduling_id', $days->pluck('id'))->count();
             }
         });
 
@@ -183,26 +188,32 @@ class BulkScheduling
                 'status' => 'activa',
             ];
 
-            // Igual que en el alta individual: si el grupo ya tiene una
-            // programación en ese turno que se cruza, se amplía esa.
+            // Igual que en el alta individual: los días que el grupo ya tiene
+            // programados en ese turno se mantienen, y si tiene una general
+            // que se cruza, los días nuevos se suman a esa.
+            $kept = SchedulingRules::programmedDates($payload);
             $target = SchedulingRules::mergeTarget($payload);
-            $data = $target ? SchedulingRules::mergeInto($target, $payload) : $payload;
             // Los grupos del lote no reservan a su gente de siempre: se
             // comparan entre sí con la que llevan aquí (checkBetweenRows).
-            $validator = SchedulingRules::validator($data, $target?->id, $groups->keys()->all());
+            $validator = SchedulingRules::validator([...$payload, 'skip_dates' => $kept], null, $groups->keys()->all());
             $validator->fails();
 
             $warnings = [];
 
             if ($target) {
+                $merged = SchedulingRules::mergeInto($target, $payload);
                 $warnings[] = sprintf(
-                    'Ya tiene la programación %s en ese turno (del %s al %s): se ampliará y quedará del %s al %s.',
+                    'Ya tiene la programación %s en ese turno (del %s al %s): los días nuevos se sumarán a ella y quedará del %s al %s.',
                     $target->code,
                     $target->start_date->format('d/m/Y'),
                     $target->end_date->format('d/m/Y'),
-                    date('d/m/Y', strtotime($data['start_date'])),
-                    date('d/m/Y', strtotime($data['end_date'])),
+                    date('d/m/Y', strtotime($merged['start_date'])),
+                    date('d/m/Y', strtotime($merged['end_date'])),
                 );
+            }
+
+            if ($kept !== []) {
+                $warnings[] = 'Ya tiene programados en ese turno: '.SchedulingRules::dateList($kept).'. Esos días se mantienen como están.';
             }
 
             if ($worked !== []) {
@@ -215,8 +226,9 @@ class BulkScheduling
                 'group' => $group,
                 'validator' => $validator,
                 'target' => $target,
-                // Solo las del rango pedido: lo que la ampliación ya tenía no es nuevo.
-                'dates' => SchedulingRules::occurrenceDates($payload),
+                'kept' => $kept,
+                // Solo los días que se crearán: los ya programados no son nuevos.
+                'dates' => SchedulingRules::occurrenceDates([...$payload, 'skip_dates' => $kept]),
                 // Con + y no con ...: el spread renumeraría los ids.
                 'crew' => [$payload['driver_id'] => 'conductor'] + array_fill_keys($payload['helper_ids'], 'ayudante'),
                 'errors' => array_values(array_unique($validator->errors()->all())),

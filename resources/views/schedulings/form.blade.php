@@ -257,7 +257,7 @@
                     <h2 class="text-sm font-semibold text-stone-900">Disponibilidad</h2>
                     <p class="mt-0.5 text-[12px] text-stone-500"
                         x-text="validation
-                            ? 'Generaría ' + validation.occurrences + (validation.occurrences === 1 ? ' recorrido' : ' recorridos')
+                            ? 'Generaría ' + validation.occurrences + (validation.occurrences === 1 ? ' programación individual' : ' programaciones individuales, una por día')
                             : (outdated ? 'Cambiaste datos: vuelve a validar' : 'Pulsa «Validar disponibilidad»')"></p>
                 </header>
                 <ul class="space-y-2 p-5">
@@ -273,14 +273,24 @@
                     @endforeach
                 </ul>
 
-                {{-- Mismo grupo y turno con fechas cruzadas: no se crea otra, se amplía la existente. --}}
+                {{-- Mismo grupo y turno con fechas cruzadas: no se crea otra general, los días nuevos se suman a la existente. --}}
                 <div x-show="validation?.merge" x-cloak
                     class="mx-5 mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-[12px] text-blue-800">
                     <p class="flex items-start gap-2 font-medium">
                         <x-lucide-git-merge class="mt-px size-3.5 shrink-0" />
-                        Este grupo ya tiene una programación en ese turno y esas fechas: se actualizará en vez de crear otra.
+                        Este grupo ya tiene una programación general en ese turno y esas fechas: los días nuevos se sumarán a ella.
                     </p>
                     <p class="mt-1 pl-5.5 text-[11px] text-blue-700" x-text="mergeLabel"></p>
+                </div>
+
+                {{-- Días que el grupo ya tiene programados: no se duplican. --}}
+                <div x-show="validation?.kept" x-cloak
+                    class="mx-5 mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-[12px] text-blue-800">
+                    <p class="flex items-start gap-2 font-medium">
+                        <x-lucide-calendar-check class="mt-px size-3.5 shrink-0" />
+                        Estos días ya están programados para el grupo en ese turno y se mantienen como están:
+                    </p>
+                    <p class="mt-1 pl-5.5 text-[11px] text-blue-700" x-text="validation?.kept"></p>
                 </div>
 
                 {{-- Un feriado no lleva recorrido; el mismo día de la semana siguiente sí. --}}

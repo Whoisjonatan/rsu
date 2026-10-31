@@ -172,7 +172,7 @@ class StaffAvailability
         }
 
         $schedulings = Scheduling::query()
-            ->with(['helpers:id', 'schedule'])
+            ->with(['helpers:id', 'schedule', 'general'])
             ->inForce()
             ->where('schedule_id', $this->scheduleId)
             ->whereDate('end_date', '>=', now()->toDateString())
@@ -182,21 +182,53 @@ class StaffAvailability
             ->get()
             ->filter(fn (Scheduling $scheduling) => $this->sharesDays($scheduling->weekdays));
 
-        foreach ($schedulings as $scheduling) {
-            $where = sprintf(
-                'la programación %s hasta el %s (%s · %s)',
-                $scheduling->code,
-                $scheduling->end_date->format('d/m/Y'),
-                $scheduling->weekdaysLabel(),
-                $scheduling->schedule?->name,
-            );
+        // Cada día es una programación: los de una misma general se juntan
+        // en un solo aviso por vehículo y por persona.
+        $vehicleDays = [];
+        $personDays = [];
 
-            $this->busyVehicles[$scheduling->vehicle_id][] = "Está en {$where}.";
+        foreach ($schedulings as $scheduling) {
+            $key = $scheduling->general_scheduling_id ?? 's'.$scheduling->id;
+            $vehicleDays[$scheduling->vehicle_id][$key][] = $scheduling;
 
             foreach ([$scheduling->driver_id, ...$scheduling->helperIds()] as $userId) {
-                $this->busyPeople[$userId][] = "Está en {$where}.";
+                $personDays[$userId][$key][] = $scheduling;
             }
         }
+
+        foreach ($vehicleDays as $vehicleId => $byGeneral) {
+            foreach ($byGeneral as $days) {
+                $this->busyVehicles[$vehicleId][] = 'Está en '.$this->describe($days).'.';
+            }
+        }
+
+        foreach ($personDays as $userId => $byGeneral) {
+            foreach ($byGeneral as $days) {
+                $this->busyPeople[$userId][] = 'Está en '.$this->describe($days).'.';
+            }
+        }
+    }
+
+    /**
+     * "la programación GEN-0003 hasta el 30/11/2026 (Lun, Mié · Mañana)", o
+     * el día suelto si es uno solo.
+     *
+     * @param  list<Scheduling>  $days
+     */
+    private function describe(array $days): string
+    {
+        $first = $days[0];
+        $end = max(array_map(fn (Scheduling $day) => $day->end_date->toDateString(), $days));
+        $weekdays = new Scheduling(['weekdays' => SchedulingRules::normalizeWeekdays(array_merge(...array_map(fn (Scheduling $day) => $day->weekdays ?? [], $days)))]);
+
+        return sprintf(
+            'la programación %s %s el %s (%s · %s)',
+            count($days) === 1 ? $first->code : ($first->general?->code ?? $first->code),
+            count($days) === 1 && $first->start_date->equalTo($first->end_date) ? 'del' : 'hasta',
+            date('d/m/Y', strtotime($end)),
+            $weekdays->weekdaysLabel(),
+            $first->schedule?->name,
+        );
     }
 
     private function sharesDays(?array $weekdays): bool

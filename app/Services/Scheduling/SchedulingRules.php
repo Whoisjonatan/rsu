@@ -2,6 +2,8 @@
 
 namespace App\Services\Scheduling;
 
+use App\Models\GeneralScheduling;
+use App\Models\Holiday;
 use App\Models\Scheduling;
 use App\Models\StaffGroup;
 use App\Models\User;
@@ -103,10 +105,11 @@ class SchedulingRules
 
     /**
      * Programar otra vez el mismo grupo en el mismo turno, con fechas que se
-     * cruzan con una programación que sigue en pie, no crea otra: amplía esa.
-     * Devuelve la que se ampliaría, o null si toca crear una nueva.
+     * cruzan con una programación general que sigue en pie, no crea otra
+     * general: los días nuevos se suman a esa. Devuelve la que se ampliaría,
+     * o null si toca crear una nueva.
      */
-    public static function mergeTarget(array $data): ?Scheduling
+    public static function mergeTarget(array $data): ?GeneralScheduling
     {
         if (blank($data['staffgroup_id'] ?? null) || blank($data['schedule_id'] ?? null)) {
             return null;
@@ -118,10 +121,10 @@ class SchedulingRules
             return null;
         }
 
-        return Scheduling::query()
+        return GeneralScheduling::query()
             ->where('staffgroup_id', (int) $data['staffgroup_id'])
             ->where('schedule_id', (int) $data['schedule_id'])
-            ->where('status', '!=', 'finalizada')
+            ->whereHas('schedulings', fn ($q) => $q->where('status', '!=', 'finalizada'))
             ->whereDate('start_date', '<=', $end)
             ->whereDate('end_date', '>=', $start)
             ->orderBy('start_date')
@@ -129,14 +132,45 @@ class SchedulingRules
     }
 
     /**
-     * Lo que queda al ampliar $target con lo nuevo: el rango cubre los dos,
-     * los días se suman y el resto (tripulación, estado, notas) es lo nuevo.
-     * Los feriados trabajados de lo nuevo mandan en su rango; fuera de él se
-     * conservan los que ya tenía.
+     * Días del rango que el grupo ya tiene programados en ese turno, en
+     * cualquier estado. No se vuelven a crear: cada día es una programación
+     * propia y se cambia desde la pestaña Detallada, no registrando encima.
+     *
+     * @return list<string>
+     */
+    public static function programmedDates(array $data): array
+    {
+        if (blank($data['staffgroup_id'] ?? null) || blank($data['schedule_id'] ?? null)) {
+            return [];
+        }
+
+        [$start, $end] = self::dateRange($data);
+
+        if ($start === null || $start > $end) {
+            return [];
+        }
+
+        $holidays = Holiday::activeDatesBetween($start, $end);
+
+        return self::normalizeDates(Scheduling::query()
+            ->where('staffgroup_id', (int) $data['staffgroup_id'])
+            ->where('schedule_id', (int) $data['schedule_id'])
+            ->whereDate('start_date', '<=', $end)
+            ->whereDate('end_date', '>=', $start)
+            ->get()
+            ->flatMap(fn (Scheduling $scheduling) => $scheduling->occurrenceDates($holidays))
+            ->filter(fn (string $date) => $date >= $start && $date <= $end)
+            ->all());
+    }
+
+    /**
+     * Lo que queda la general $target al sumarle lo nuevo: el rango cubre los
+     * dos y los días de la semana se suman. Los feriados trabajados de lo
+     * nuevo mandan en su rango; fuera de él se conservan los que ya tenía.
      *
      * @return array<string, mixed>
      */
-    public static function mergeInto(Scheduling $target, array $data): array
+    public static function mergeInto(GeneralScheduling $target, array $data): array
     {
         [$start, $end] = self::dateRange($data);
 
@@ -240,6 +274,15 @@ class SchedulingRules
 
             $dates = self::occurrenceDates($data);
 
+            if ($dates === [] && ($data['skip_dates'] ?? []) !== [] && self::occurrenceDates([...$data, 'skip_dates' => []]) !== []) {
+                $validator->errors()->add(
+                    'start_date',
+                    'El grupo ya tiene programados en ese turno todos los días de ese rango: no hay días nuevos que programar.',
+                );
+
+                return;
+            }
+
             if ($dates === []) {
                 $validator->errors()->add(
                     'weekdays',
@@ -265,16 +308,21 @@ class SchedulingRules
      * Fechas reales que cubriria la programacion. Se arma un Scheduling sin
      * guardar para no repetir la logica de expansion de dias.
      *
+     * `skip_dates` son los días que el grupo ya tiene programados en ese
+     * turno (ver programmedDates): no se validan ni se vuelven a crear.
+     *
      * @return list<string>
      */
     public static function occurrenceDates(array $data): array
     {
-        return (new Scheduling([
+        $dates = (new Scheduling([
             'weekdays' => self::normalizeWeekdays($data['weekdays'] ?? null),
             'worked_holidays' => self::normalizeDates($data['worked_holidays'] ?? null),
             'start_date' => $data['start_date'] ?? null,
             'end_date' => $data['end_date'] ?? null,
         ]))->occurrenceDates();
+
+        return array_values(array_diff($dates, self::normalizeDates($data['skip_dates'] ?? null)));
     }
 
     /**
@@ -365,6 +413,10 @@ class SchedulingRules
      * mes no chocan si una es de lunes y la otra de martes. El aviso dice en
      * qué fechas chocan.
      *
+     * Cada día es una programación, así que los choques con los días de una
+     * misma general se juntan en un solo aviso que la nombra; si es un solo
+     * día, se nombra ese día.
+     *
      * @param  list<string>  $dates
      */
     private static function checkOverlap(ValidatorContract $validator, array $data, array $dates, ?int $ignoreId): void
@@ -375,13 +427,16 @@ class SchedulingRules
             ->when($ignoreId, fn ($q) => $q->whereKeyNot($ignoreId))
             ->whereDate('start_date', '<=', $data['end_date'])
             ->whereDate('end_date', '>=', $data['start_date'])
-            ->with(['vehicle', 'helpers', 'zone'])
+            ->with(['general', 'vehicle', 'helpers', 'zone'])
             ->get();
 
+        $holidays = Holiday::activeDatesBetween($data['start_date'], $data['end_date']);
         $crew = self::crew($data);
+        // [campo, quién, clave de la general] => [campo, quién, códigos, zona, fechas]
+        $found = [];
 
         foreach ($candidates as $other) {
-            $shared = array_values(array_intersect($dates, $other->occurrenceDates()));
+            $shared = array_values(array_intersect($dates, $other->occurrenceDates($holidays)));
 
             if ($shared === []) {
                 continue;
@@ -402,14 +457,21 @@ class SchedulingRules
             }
 
             foreach ($clashes as [$field, $what]) {
-                $validator->errors()->add($field, sprintf(
-                    '%s ya está programado en ese turno (%s, zona %s) en: %s.',
-                    trim($what),
-                    $other->code,
-                    $other->zone->name ?? '—',
-                    self::dateList($shared),
-                ));
+                $key = $field.'|'.$what.'|'.($other->general_scheduling_id ?? 's'.$other->id);
+                $found[$key] ??= [$field, trim($what), $other->general?->code, [], $other->zone->name ?? '—', []];
+                $found[$key][3][] = $other->code;
+                array_push($found[$key][5], ...$shared);
             }
+        }
+
+        foreach ($found as [$field, $what, $generalCode, $codes, $zone, $shared]) {
+            $validator->errors()->add($field, sprintf(
+                '%s ya está programado en ese turno (%s, zona %s) en: %s.',
+                $what,
+                count($codes) === 1 || ! $generalCode ? implode(', ', $codes) : $generalCode,
+                $zone,
+                self::dateList($shared),
+            ));
         }
     }
 

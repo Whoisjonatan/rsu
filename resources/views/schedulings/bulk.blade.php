@@ -225,7 +225,7 @@
                     <p class="mt-0.5 text-[12px] text-stone-500"
                         x-text="report.totals.groups + (report.totals.groups === 1 ? ' grupo' : ' grupos')
                             + ' · ' + report.totals.ok + ' correctos · ' + report.totals.warning + ' con advertencias · ' + report.totals.error + ' con errores'
-                            + ' · ' + report.totals.occurrences + (report.totals.occurrences === 1 ? ' recorrido' : ' recorridos')
+                            + ' · ' + report.totals.occurrences + (report.totals.occurrences === 1 ? ' programación individual' : ' programaciones individuales')
                             + (report.valid ? '. Ya puedes guardar.' : '. Corrige los errores y vuelve a validar.')"></p>
                 </header>
 
@@ -283,7 +283,7 @@
 
                                 <p x-show="!item.errors.length" class="flex items-center gap-1.5 font-medium text-brand-700">
                                     <x-lucide-circle-check class="size-3.5" />
-                                    <span x-text="'Sin errores: generará ' + item.occurrences + (item.occurrences === 1 ? ' recorrido.' : ' recorridos.')"></span>
+                                    <span x-text="'Sin errores: generará ' + item.occurrences + (item.occurrences === 1 ? ' programación individual.' : ' programaciones individuales (una por día).')"></span>
                                 </p>
 
                                 {{-- Con varias páginas la card puede no estar a la vista. --}}

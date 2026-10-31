@@ -11,6 +11,7 @@
     $navGroups = [
         [null, [
             ['/inicio', 'Inicio', 'house'],
+            ['/dashboard', 'Dashboard', 'layout-dashboard'],
         ]],
         ['Gestión vehicular', [
             ['/vehiculos', 'Vehículos', 'truck'],
@@ -30,6 +31,10 @@
             ['/turnos', 'Turnos', 'clock'],
             ['/grupos-personal', 'Grupos de personal', 'users-round'],
             ['/feriados', 'Feriados', 'calendar-x'],
+        ]],
+        ['Gestión de cambios', [
+            ['/cambios', 'Cambios', 'git-compare-arrows'],
+            ['/motivos', 'Motivos', 'message-square-text'],
         ]],
     ];
 

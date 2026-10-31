@@ -19,32 +19,7 @@ class SchedulingChange extends Model
         'ayudante' => 'Personal (ayudante)',
     ];
 
-    /** Motivos predefinidos de cada sección de la pantalla. Con "Otro" la descripción es obligatoria. */
-    public const REASONS = [
-        'turno' => [
-            'Reorganización de rutas',
-            'Mayor demanda en la zona',
-            'Solicitud del personal',
-            'Otro',
-        ],
-        'vehiculo' => [
-            'Mantenimiento programado',
-            'Avería',
-            'Siniestro',
-            'Reasignación de flota',
-            'Otro',
-        ],
-        'personal' => [
-            'Vacaciones',
-            'Descanso médico',
-            'Permiso',
-            'Falta',
-            'Reasignación',
-            'Otro',
-        ],
-    ];
-
-    public const OTHER = 'Otro';
+    // Los motivos se registran en Gestión de cambios (ChangeReason); aquí se guarda su texto.
 
     protected $table = 'scheduling_changes';
 
@@ -52,7 +27,7 @@ class SchedulingChange extends Model
         'type', 'old_id', 'new_id', 'old_value', 'new_value', 'reason', 'description', 'user_id',
     ];
 
-    /** La sección de la pantalla (y de REASONS) a la que pertenece el tipo. */
+    /** La sección de la pantalla (y de ChangeReason) a la que pertenece el tipo. */
     public static function section(string $type): string
     {
         return in_array($type, ['conductor', 'ayudante'], true) ? 'personal' : $type;

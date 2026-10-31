@@ -169,7 +169,7 @@ export default (config) => ({
         const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
         if (result.errors.length) return `${count(result.errors.length, 'error', 'errores')} · ver detalle`;
         if (result.warnings.length) return `${count(result.warnings.length, 'advertencia', 'advertencias')} · ver detalle`;
-        return `Generará ${count(result.occurrences, 'recorrido', 'recorridos')}`;
+        return `Generará ${count(result.occurrences, 'programación individual', 'programaciones individuales')}`;
     },
 
     /** Lleva a la página donde está la card del grupo (quitando la búsqueda si lo oculta). */

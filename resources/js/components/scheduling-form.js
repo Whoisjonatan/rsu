@@ -173,7 +173,7 @@ export default (config) => ({
         return `${weekday} ${formatDate(holiday.date)}${holiday.description ? ` · ${holiday.description}` : ''}`;
     },
 
-    /** "PRG-0004 quedará del 01/11/2026 al 30/11/2026 · Lun, Mié, Vie". */
+    /** "GEN-0004 quedará del 01/11/2026 al 30/11/2026 · Lun, Mié, Vie". */
     get mergeLabel() {
         const merge = this.validation?.merge;
         if (!merge) return '';

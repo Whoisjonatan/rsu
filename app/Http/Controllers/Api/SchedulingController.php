@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SchedulingRequest;
 use App\Http\Resources\SchedulingResource;
+use App\Models\GeneralScheduling;
 use App\Models\Holiday;
 use App\Models\Scheduling;
 use App\Models\User;
@@ -49,15 +50,27 @@ class SchedulingController extends Controller
         return SchedulingResource::collection($schedulings);
     }
 
+    /**
+     * Registra la programación general y devuelve los días creados, uno por
+     * programación. Siempre 201: aunque se sumen a una general existente
+     * (ver SchedulingRules::mergeTarget), los días son nuevos.
+     */
     public function store(SchedulingRequest $request): JsonResponse
     {
-        // Si amplía una que ya existía (ver SchedulingRules::mergeTarget) no hay alta: 200, no 201.
-        $target = $request->mergeTarget();
-        $scheduling = ($target ?? new Scheduling)->saveAndSync($request->validated());
+        $days = GeneralScheduling::register($request->validated(), $request->skipDates(), $request->mergeTarget());
+        $general = $days->first()->general;
 
-        return (new SchedulingResource($scheduling->load(self::RELATIONS)->loadCount('vehicleRoutes')))
+        return SchedulingResource::collection(Scheduling::with(self::RELATIONS)->withCount('vehicleRoutes')->findMany($days->pluck('id')))
+            ->additional(['general' => [
+                'id' => $general->id,
+                'code' => $general->code,
+                'start_date' => $general->start_date->toDateString(),
+                'end_date' => $general->end_date->toDateString(),
+                'merged' => $request->mergeTarget() !== null,
+                'kept_dates' => $request->skipDates(),
+            ]])
             ->response()
-            ->setStatusCode($target ? 200 : 201);
+            ->setStatusCode(201);
     }
 
     public function show(Scheduling $scheduling): SchedulingResource
@@ -118,14 +131,10 @@ class SchedulingController extends Controller
             $data['worked_holidays'] = Scheduling::find($ignoreId)?->worked_holidays ?? [];
         }
 
-        // Un alta que ampliaría otra programación se valida como lo que se
-        // guardará: la existente con el rango y los días sumados.
+        // Un alta se valida como lo que se guardará: sin los días que el grupo
+        // ya tiene programados, y sumando a la general que se cruza, si la hay.
         $target = $ignoreId ? null : SchedulingRules::mergeTarget($data);
-
-        if ($target) {
-            $data = SchedulingRules::mergeInto($target, $data);
-            $ignoreId = $target->id;
-        }
+        $data['skip_dates'] = $ignoreId ? [] : SchedulingRules::programmedDates($data);
 
         $validator = SchedulingRules::validator($data, $ignoreId);
         $validator->fails();
@@ -163,13 +172,15 @@ class SchedulingController extends Controller
             'occurrences' => count(SchedulingRules::occurrenceDates($data)),
             // Los feriados que caen en un día marcado: explican por qué salen menos recorridos.
             'holidays' => $this->holidaysSkipped($data),
-            // W18 avisa de que "Programar" ampliará esta en vez de crear otra.
-            'merge' => $target ? [
+            // W18 avisa de que los días se sumarán a esta general en vez de crear otra.
+            'merge' => $target ? (fn (array $merged) => [
                 'code' => $target->code,
-                'start_date' => $data['start_date'],
-                'end_date' => $data['end_date'],
-                'weekdays' => $data['weekdays'],
-            ] : null,
+                'start_date' => $merged['start_date'],
+                'end_date' => $merged['end_date'],
+                'weekdays' => $merged['weekdays'],
+            ])(SchedulingRules::mergeInto($target, $data)) : null,
+            // Días que el grupo ya tiene programados en ese turno: se mantienen.
+            'kept' => $data['skip_dates'] !== [] ? SchedulingRules::dateList($data['skip_dates']) : null,
         ]);
     }
 
@@ -234,9 +245,11 @@ class SchedulingController extends Controller
 
         $totals = $bulk->save();
         $message = sprintf(
-            'Programación masiva registrada: %s, %s y %s.',
-            $this->plural($totals['created'], 'programación nueva', 'programaciones nuevas'),
+            'Programación masiva registrada: %s (%s, %s) con %s y %s.',
+            $this->plural($totals['created'] + $totals['merged'], 'programación general', 'programaciones generales'),
+            $this->plural($totals['created'], 'nueva', 'nuevas'),
             $this->plural($totals['merged'], 'ampliada', 'ampliadas'),
+            $this->plural($totals['days'], 'programación individual', 'programaciones individuales'),
             $this->plural($totals['routes'], 'recorrido', 'recorridos'),
         );
 
@@ -248,7 +261,7 @@ class SchedulingController extends Controller
         return response()->json([
             'message' => $message,
             ...$totals,
-            'redirect' => route('schedulings.index', ['date_from' => $input['start_date'], 'date_to' => $input['end_date']]),
+            'redirect' => route('schedulings.index', ['tab' => 'general', 'date_from' => $input['start_date'], 'date_to' => $input['end_date']]),
         ], 201);
     }
 
@@ -303,6 +316,8 @@ class SchedulingController extends Controller
             ]), [
                 'helper_ids' => $scheduling->helperIds(),
                 'weekdays' => array_map('intval', $scheduling->weekdays ?? []),
+                // Sin esto, un día que cae en feriado trabajado se quedaría sin fecha.
+                'worked_holidays' => $scheduling->worked_holidays ?? [],
                 'start_date' => $scheduling->start_date->toDateString(),
                 'end_date' => $scheduling->end_date->toDateString(),
             ], $data['changes']);

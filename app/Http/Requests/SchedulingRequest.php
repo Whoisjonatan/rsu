@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Models\Scheduling;
+use App\Models\GeneralScheduling;
 use App\Services\Scheduling\SchedulingRules;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -11,12 +11,18 @@ use Illuminate\Validation\Rule;
 /**
  * Alta y edicion de una programacion (W18).
  *
+ * El alta registra una programación general y la desglosa en una por día
+ * (GeneralScheduling::register); la edición por API cambia un solo día.
+ *
  * Las reglas viven en SchedulingRules porque la checklist en vivo de W18 y la
  * edicion masiva de W19 tienen que aplicar exactamente las mismas.
  */
 class SchedulingRequest extends FormRequest
 {
-    private ?Scheduling $mergeTarget = null;
+    private ?GeneralScheduling $mergeTarget = null;
+
+    /** @var list<string> */
+    private array $skipDates = [];
 
     public function authorize(): bool
     {
@@ -67,21 +73,30 @@ class SchedulingRequest extends FormRequest
             $this->merge(['worked_holidays' => $this->route('scheduling')->worked_holidays ?? []]);
         }
 
-        // Un alta que se cruza con una programación del mismo grupo y turno la
-        // amplía: se valida (y se guarda) ya con el rango y los días sumados.
+        // En un alta, los días que el grupo ya tiene programados en ese turno
+        // no se validan ni se vuelven a crear, y si hay una general que se
+        // cruza, los días nuevos se suman a ella.
         if (! $this->route('scheduling')) {
+            $this->skipDates = SchedulingRules::programmedDates($this->all());
             $this->mergeTarget = SchedulingRules::mergeTarget($this->all());
-        }
-
-        if ($this->mergeTarget) {
-            $this->merge(SchedulingRules::mergeInto($this->mergeTarget, $this->all()));
+            $this->merge(['skip_dates' => $this->skipDates]);
         }
     }
 
-    /** La programación que este alta amplía en vez de crear otra, si la hay. */
-    public function mergeTarget(): ?Scheduling
+    /** La programación general a la que este alta suma sus días, si la hay. */
+    public function mergeTarget(): ?GeneralScheduling
     {
         return $this->mergeTarget;
+    }
+
+    /**
+     * Días del rango que el grupo ya tenía programados en ese turno.
+     *
+     * @return list<string>
+     */
+    public function skipDates(): array
+    {
+        return $this->skipDates;
     }
 
     public function withValidator(Validator $validator): void
@@ -94,18 +109,18 @@ class SchedulingRequest extends FormRequest
             return;
         }
 
-        // Al editar (o ampliar otra), la programacion no debe chocar consigo misma.
-        SchedulingRules::attachBusinessRules($validator, $this->route('scheduling')?->id ?? $this->mergeTarget?->id);
+        // Al editar, la programacion no debe chocar consigo misma.
+        SchedulingRules::attachBusinessRules($validator, $this->route('scheduling')?->id);
     }
 
     /**
-     * Cuantos recorridos generaria. Lo usa la checklist de W18 para decir
+     * Los días que se crearían. Lo usa la checklist de W18 para decir
      * cuantos dias cubre lo que se esta programando.
      *
      * @return list<string>
      */
     public function occurrenceDates(): array
     {
-        return SchedulingRules::occurrenceDates($this->validated());
+        return SchedulingRules::occurrenceDates([...$this->validated(), 'skip_dates' => $this->skipDates]);
     }
 }

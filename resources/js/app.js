@@ -10,6 +10,8 @@ import startRoute from './components/start-route';
 import bulkScheduling from './components/bulk-scheduling';
 import schedulingChanges from './components/scheduling-changes';
 import staffGroupForm from './components/staff-group-form';
+import dailyDashboard from './components/daily-dashboard';
+import bulkChanges from './components/bulk-changes';
 
 Alpine.plugin(focus);
 
@@ -20,6 +22,8 @@ Alpine.data('startRoute', startRoute);
 Alpine.data('bulkScheduling', bulkScheduling);
 Alpine.data('schedulingChanges', schedulingChanges);
 Alpine.data('staffGroupForm', staffGroupForm);
+Alpine.data('dailyDashboard', dailyDashboard);
+Alpine.data('bulkChanges', bulkChanges);
 
 window.Alpine = Alpine;
 

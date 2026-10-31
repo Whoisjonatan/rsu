@@ -20,6 +20,14 @@ class SchedulingResource extends JsonResource
             'id' => $this->id,
             // El PRG-NNNN que W17 muestra como primera columna.
             'code' => $this->code,
+            // La programación general de la que este registro es un día.
+            'general_scheduling_id' => $this->general_scheduling_id,
+            'general' => $this->whenLoaded('general', fn () => $this->general ? [
+                'id' => $this->general->id,
+                'code' => $this->general->code,
+                'start_date' => $this->general->start_date->toDateString(),
+                'end_date' => $this->general->end_date->toDateString(),
+            ] : null),
             'zone_id' => $this->zone_id,
             'zone' => $this->whenLoaded('zone', fn () => [
                 'id' => $this->zone->id,

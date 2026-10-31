@@ -1,6 +1,7 @@
 {{-- Modificar programación: cambios de turno, vehículo y personal. Estado en resources/js/components/scheduling-changes.js. --}}
 @php
-    $reasons = \App\Models\SchedulingChange::REASONS;
+    // Por sección, de Gestión de cambios › Motivos.
+    $reasons = \App\Models\ChangeReason::options();
 
     $original = [
         'schedule_id' => (string) $scheduling->schedule_id,
@@ -57,14 +58,14 @@
     </x-slot:actions>
 
     <form method="POST" action="{{ route('schedulings.update', $scheduling) }}" class="space-y-4"
-        x-data="schedulingChanges({ original: @js($original), catalogs: @js($catalogs), pending: @js($pending), history: @js($history) })"
+        x-data="schedulingChanges({ original: @js($original), catalogs: @js($catalogs), reasons: @js($reasons), pending: @js($pending), history: @js($history) })"
         @submit="submit($event)">
         @csrf
         @method('PUT')
 
         <x-card>
             <x-card-header :title="'Programación '.$scheduling->code"
-                description="Los cambios se aplican a los recorridos pendientes de hoy en adelante; lo ya realizado no se toca.">
+                description="Los cambios se aplican solo a este día, y a su recorrido si todavía no inició. Los demás días de la programación general no cambian.">
                 <x-badge :tone="Status::tone('scheduling', $scheduling->status)">{{ Status::label('scheduling', $scheduling->status) }}</x-badge>
             </x-card-header>
             <dl class="grid gap-4 p-5 text-[12px] sm:grid-cols-2 lg:grid-cols-4">
@@ -77,12 +78,12 @@
                     <dd class="font-medium text-stone-800">{{ $scheduling->zone?->name ?? '—' }}</dd>
                 </div>
                 <div>
-                    <dt class="text-stone-500">Vigencia</dt>
-                    <dd class="font-medium text-stone-800">{{ $scheduling->start_date->format('d/m/Y') }} al {{ $scheduling->end_date->format('d/m/Y') }}</dd>
+                    <dt class="text-stone-500">Fecha</dt>
+                    <dd class="font-medium text-stone-800">{{ $scheduling->dateLabel() }}</dd>
                 </div>
                 <div>
-                    <dt class="text-stone-500">Días</dt>
-                    <dd class="font-medium text-stone-800">{{ $scheduling->weekdaysLabel() }}</dd>
+                    <dt class="text-stone-500">Programación general</dt>
+                    <dd class="font-mono font-medium text-stone-800">{{ $scheduling->general?->code ?? '—' }}</dd>
                 </div>
             </dl>
         </x-card>
@@ -122,13 +123,13 @@
                         <select id="turno_reason" x-model="forms.turno.reason" class="field">
                             <option value="">Selecciona un motivo</option>
                             @foreach ($reasons['turno'] as $reason)
-                                <option value="{{ $reason }}">{{ $reason }}</option>
+                                <option value="{{ $reason['name'] }}">{{ $reason['name'] }}</option>
                             @endforeach
                         </select>
                     </x-field>
                     <x-field label="Motivo del cambio" for="turno_description">
                         <textarea id="turno_description" rows="2" maxlength="500" x-model="forms.turno.description" class="field"
-                            :placeholder="forms.turno.reason === 'Otro' ? 'Obligatorio con «Otro»' : 'Opcional'"></textarea>
+                            :placeholder="needsDescription('turno', forms.turno.reason) ? 'Obligatorio con este motivo' : 'Opcional'"></textarea>
                     </x-field>
                     <p x-show="formErrors.turno" x-text="formErrors.turno" x-cloak class="text-[11px] font-medium text-red-600"></p>
                     <button type="button" class="btn btn-secondary w-full justify-center" @click="addChange('turno')">
@@ -162,13 +163,13 @@
                         <select id="vehiculo_reason" x-model="forms.vehiculo.reason" class="field">
                             <option value="">Selecciona un motivo</option>
                             @foreach ($reasons['vehiculo'] as $reason)
-                                <option value="{{ $reason }}">{{ $reason }}</option>
+                                <option value="{{ $reason['name'] }}">{{ $reason['name'] }}</option>
                             @endforeach
                         </select>
                     </x-field>
                     <x-field label="Motivo del cambio" for="vehiculo_description">
                         <textarea id="vehiculo_description" rows="2" maxlength="500" x-model="forms.vehiculo.description" class="field"
-                            :placeholder="forms.vehiculo.reason === 'Otro' ? 'Obligatorio con «Otro»' : 'Opcional'"></textarea>
+                            :placeholder="needsDescription('vehiculo', forms.vehiculo.reason) ? 'Obligatorio con este motivo' : 'Opcional'"></textarea>
                     </x-field>
                     <p x-show="formErrors.vehiculo" x-text="formErrors.vehiculo" x-cloak class="text-[11px] font-medium text-red-600"></p>
                     <button type="button" class="btn btn-secondary w-full justify-center" @click="addChange('vehiculo')">
@@ -202,13 +203,13 @@
                         <select id="personal_reason" x-model="forms.personal.reason" class="field">
                             <option value="">Selecciona un motivo</option>
                             @foreach ($reasons['personal'] as $reason)
-                                <option value="{{ $reason }}">{{ $reason }}</option>
+                                <option value="{{ $reason['name'] }}">{{ $reason['name'] }}</option>
                             @endforeach
                         </select>
                     </x-field>
                     <x-field label="Motivo del cambio" for="personal_description">
                         <textarea id="personal_description" rows="2" maxlength="500" x-model="forms.personal.description" class="field"
-                            :placeholder="forms.personal.reason === 'Otro' ? 'Obligatorio con «Otro»' : 'Opcional'"></textarea>
+                            :placeholder="needsDescription('personal', forms.personal.reason) ? 'Obligatorio con este motivo' : 'Opcional'"></textarea>
                     </x-field>
                     <p x-show="formErrors.personal" x-text="formErrors.personal" x-cloak class="text-[11px] font-medium text-red-600"></p>
                     <button type="button" class="btn btn-secondary w-full justify-center" @click="addChange('personal')">

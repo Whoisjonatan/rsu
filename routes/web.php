@@ -4,12 +4,15 @@ use App\Http\Controllers\Web\AttendanceController;
 use App\Http\Controllers\Web\AuthController;
 use App\Http\Controllers\Web\BrandController;
 use App\Http\Controllers\Web\BrandModelController;
+use App\Http\Controllers\Web\ChangeReasonController;
 use App\Http\Controllers\Web\ContractController;
+use App\Http\Controllers\Web\DashboardController;
 use App\Http\Controllers\Web\HolidayController;
 use App\Http\Controllers\Web\HomeController;
 use App\Http\Controllers\Web\PersonController;
 use App\Http\Controllers\Web\RouteController;
 use App\Http\Controllers\Web\ScheduleController;
+use App\Http\Controllers\Web\SchedulingChangeController;
 use App\Http\Controllers\Web\SchedulingController;
 use App\Http\Controllers\Web\StaffGroupController;
 use App\Http\Controllers\Web\UserTypeController;
@@ -46,6 +49,8 @@ Route::middleware('auth')->group(function () {
     // El panel (W02) se retiró: la raíz lleva a Inicio.
     Route::redirect('/', '/inicio');
     Route::get('inicio', [HomeController::class, 'welcome'])->name('welcome');
+    // Monitoreo diario de las programaciones: completas, incompletas y personal faltante.
+    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // Catálogos de vehículos (W03): cuatro pestañas en una sola pantalla.
     Route::get('vehiculos/catalogos', [VehicleCatalogController::class, 'index'])->name('vehicle-catalogs.index');
@@ -157,6 +162,20 @@ Route::middleware('auth')->group(function () {
     Route::put('programacion/{scheduling}', [SchedulingController::class, 'update'])->whereNumber('scheduling')->name('schedulings.update');
     Route::delete('programacion/{scheduling}', [SchedulingController::class, 'destroy'])->whereNumber('scheduling')->name('schedulings.destroy');
     Route::patch('programacion/{scheduling}/finalizar', [SchedulingController::class, 'finish'])->whereNumber('scheduling')->name('schedulings.finish');
+    // La programación general entera (pestaña General de W17): todos sus días a la vez.
+    Route::delete('programacion/general/{general}', [SchedulingController::class, 'destroyGeneral'])->whereNumber('general')->name('schedulings.general.destroy');
+    Route::patch('programacion/general/{general}/finalizar', [SchedulingController::class, 'finishGeneral'])->whereNumber('general')->name('schedulings.general.finish');
+
+    // Gestión de cambios: el historial de cambios y los motivos que se eligen al reprogramar.
+    Route::get('cambios', [SchedulingChangeController::class, 'index'])->name('scheduling-changes.index');
+    Route::delete('cambios/{change}', [SchedulingChangeController::class, 'destroy'])->whereNumber('change')->name('scheduling-changes.destroy');
+    // Cambio masivo: primero el resumen, luego se aplica lo confirmado.
+    Route::post('cambios/masivo/resumen', [SchedulingChangeController::class, 'bulkPreview'])->name('scheduling-changes.bulk.preview');
+    Route::post('cambios/masivo', [SchedulingChangeController::class, 'bulkStore'])->name('scheduling-changes.bulk.store');
+    Route::get('motivos', [ChangeReasonController::class, 'index'])->name('change-reasons.index');
+    Route::post('motivos', [ChangeReasonController::class, 'store'])->name('change-reasons.store');
+    Route::put('motivos/{reason}', [ChangeReasonController::class, 'update'])->whereNumber('reason')->name('change-reasons.update');
+    Route::delete('motivos/{reason}', [ChangeReasonController::class, 'destroy'])->whereNumber('reason')->name('change-reasons.destroy');
 
     // Maestros se separó en dos módulos; las direcciones viejas siguen funcionando.
     Route::redirect('maestros', '/vehiculos/catalogos');

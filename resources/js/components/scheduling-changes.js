@@ -5,8 +5,6 @@ const TYPE_LABELS = {
     ayudante: 'Personal (ayudante)',
 };
 
-const OTHER = 'Otro';
-
 const blankForm = () => ({ old_id: '', new_id: '', reason: '', description: '' });
 
 /**
@@ -20,6 +18,8 @@ const blankForm = () => ({ old_id: '', new_id: '', reason: '', description: '' }
  */
 export default (config) => ({
     original: config.original,
+    // Motivos por sección, de Gestión de cambios: { turno: [{ name, requires_description }], ... }.
+    reasons: config.reasons ?? {},
     catalogs: config.catalogs,
     pending: config.pending ?? [],
     // Lo ya guardado, del más reciente al más antiguo, de 5 en 5.
@@ -29,6 +29,11 @@ export default (config) => ({
     forms: { turno: blankForm(), vehiculo: blankForm(), personal: blankForm() },
     formErrors: { turno: null, vehiculo: null, personal: null },
     submitting: false,
+
+    /** Si el motivo pide describir el cambio. */
+    needsDescription(section, name) {
+        return Boolean(this.reasons[section]?.find((reason) => reason.name === name)?.requires_description);
+    },
 
     find(list, id) {
         return this.catalogs[list].find((item) => String(item.id) === String(id)) ?? null;
@@ -145,7 +150,7 @@ export default (config) => ({
         if (section === 'personal' && !form.old_id) return (this.formErrors[section] = 'Elige a qué persona se reemplaza.');
         if (!form.new_id) return (this.formErrors[section] = section === 'turno' ? 'Elige el nuevo turno.' : section === 'vehiculo' ? 'Elige el nuevo vehículo.' : 'Elige el nuevo personal.');
         if (!form.reason) return (this.formErrors[section] = 'Elige un motivo.');
-        if (form.reason === OTHER && !form.description.trim()) return (this.formErrors[section] = 'Con el motivo «Otro» describe el motivo del cambio.');
+        if (this.needsDescription(section, form.reason) && !form.description.trim()) return (this.formErrors[section] = `Con el motivo «${form.reason}» describe el motivo del cambio.`);
 
         this.pending.push({
             type: section,

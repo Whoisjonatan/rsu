@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\DB;
 class Scheduling extends Model
 {
     /** Relaciones que pintan las listas y la ficha (W17, W18). */
-    public const RELATIONS = ['zone', 'route', 'vehicle', 'schedule', 'driver', 'helpers'];
+    public const RELATIONS = ['general', 'zone', 'route', 'vehicle', 'schedule', 'driver', 'helpers'];
 
     /** Estados de una programación que sigue en pie (ver scopeInForce). */
     public const IN_FORCE = ['activa', 'reprogramada'];
@@ -32,6 +32,8 @@ class Scheduling extends Model
         $today = now()->toDateString();
 
         return $query
+            // "Ver días" de la pestaña General: solo los de esa programación.
+            ->when(filled($filters['general_scheduling_id'] ?? null), fn ($q) => $q->where('general_scheduling_id', (int) $filters['general_scheduling_id']))
             ->when(filled($filters['zone_id'] ?? null), fn ($q) => $q->where('zone_id', (int) $filters['zone_id']))
             ->when(filled($filters['schedule_id'] ?? null), fn ($q) => $q->where('schedule_id', (int) $filters['schedule_id']))
             ->when(filled($filters['vehicle_id'] ?? null), fn ($q) => $q->where('vehicle_id', (int) $filters['vehicle_id']))
@@ -89,17 +91,47 @@ class Scheduling extends Model
     }
 
     /**
+     * Cuelga de cada día el estado de su recorrido y el aviso de vacaciones
+     * sobrevenidas: es lo que la pestaña "Detallada" de W17 pinta en cada
+     * fila. Cada día tiene a lo sumo un recorrido, el de su fecha.
+     *
+     * @param  Collection<int, self>  $schedulings
+     */
+    public static function attachRouteStatus(Collection $schedulings): void
+    {
+        $routes = VehicleRoute::query()
+            ->whereIn('scheduling_id', $schedulings->pluck('id'))
+            ->get()
+            ->groupBy('scheduling_id');
+
+        foreach ($schedulings as $scheduling) {
+            // Las anteriores al desglose por día pueden tener varios: el más próximo.
+            $route = $routes->get($scheduling->id)?->sortBy('date_route')->first();
+
+            $scheduling->day_route_id = $route?->id;
+            // Sin recorrido: o es feriado, o el día ya había pasado al registrarlo.
+            $scheduling->day_status = $route?->status
+                ?? (Holiday::isHoliday($scheduling->start_date->toDateString()) ? 'feriado' : 'sin_recorrido');
+            $scheduling->day_block_reason = $route?->block_reason;
+            $scheduling->vacation_conflicts = in_array($scheduling->status, self::IN_FORCE, true)
+                ? $scheduling->vacationConflicts()
+                : [];
+        }
+    }
+
+    /**
      * Contadores de la barra superior de W17.
      *
      * "Activas" cuenta también las reprogramadas: siguen en pie.
      *
-     * @return array{total: int, activas: int, vigentes: int, inactivas: int, finalizadas: int, reprogramadas: int}
+     * @return array{generales: int, total: int, activas: int, vigentes: int, inactivas: int, finalizadas: int, reprogramadas: int}
      */
     public static function summary(): array
     {
         $today = now()->toDateString();
 
         return [
+            'generales' => GeneralScheduling::count(),
             'total' => static::count(),
             'activas' => static::inForce()->count(),
             'vigentes' => static::inForce()
@@ -167,7 +199,7 @@ class Scheduling extends Model
     ];
 
     protected $fillable = [
-        'zone_id', 'staffgroup_id', 'route_id', 'vehicle_id', 'schedule_id',
+        'general_scheduling_id', 'zone_id', 'staffgroup_id', 'route_id', 'vehicle_id', 'schedule_id',
         'driver_id', 'weekdays', 'worked_holidays', 'start_date', 'end_date', 'status', 'notes',
     ];
 
@@ -180,6 +212,13 @@ class Scheduling extends Model
     {
         static::creating(function (self $scheduling) {
             $scheduling->code ??= self::nextCode();
+        });
+
+        // Una programación general sin días ya no programa nada.
+        static::deleted(function (self $scheduling) {
+            if ($scheduling->general_scheduling_id && ! static::where('general_scheduling_id', $scheduling->general_scheduling_id)->exists()) {
+                GeneralScheduling::whereKey($scheduling->general_scheduling_id)->delete();
+            }
         });
     }
 
@@ -292,6 +331,12 @@ class Scheduling extends Model
         return $this->belongsTo(User::class, 'driver_id');
     }
 
+    /** La programación general de la que es un día. */
+    public function general(): BelongsTo
+    {
+        return $this->belongsTo(GeneralScheduling::class, 'general_scheduling_id');
+    }
+
     /** El grupo de personal del que salió, si salió de uno. */
     public function staffGroup(): BelongsTo
     {
@@ -338,7 +383,8 @@ class Scheduling extends Model
             'zone' => $this->zone?->name,
             'schedule' => $this->schedule?->label,
             'vehicle' => $this->vehicle?->plate,
-            'dates' => $this->start_date->format('d/m/Y').' al '.$this->end_date->format('d/m/Y'),
+            'general' => $this->general?->code,
+            'dates' => $this->dateLabel(),
             'weekdays' => $this->weekdaysLabel(),
             'crew' => [
                 ['role' => 'Conductor', 'name' => $this->driver?->full_name ?? '—'],
@@ -357,6 +403,17 @@ class Scheduling extends Model
                 'description' => $change->description,
             ])->all(),
         ];
+    }
+
+    /**
+     * "Lun 03/11/2026" para un día. Las anteriores al desglose por día pueden
+     * cubrir un rango y lo muestran entero.
+     */
+    public function dateLabel(): string
+    {
+        return $this->start_date->equalTo($this->end_date)
+            ? (self::WEEKDAY_LABELS[$this->start_date->dayOfWeekIso] ?? '').' '.$this->start_date->format('d/m/Y')
+            : $this->start_date->format('d/m/Y').' al '.$this->end_date->format('d/m/Y');
     }
 
     /** "Pérez, Ana; Ruiz, Luis" para las listas. */
@@ -382,13 +439,15 @@ class Scheduling extends Model
      * tampoco cuenta en las validaciones de contrato y vacaciones. La
      * excepción son los feriados que la programación trabaja (worked_holidays).
      *
+     * @param  list<string>|null  $holidays  Los feriados activos ya consultados, para no
+     *                                       repetir la consulta en cada día de una lista.
      * @return list<string>
      */
-    public function occurrenceDates(): array
+    public function occurrenceDates(?array $holidays = null): array
     {
         $days = array_map('intval', $this->weekdays ?? []);
         $holidays = array_diff(
-            Holiday::activeDatesBetween($this->start_date, $this->end_date),
+            $holidays ?? Holiday::activeDatesBetween($this->start_date, $this->end_date),
             $this->worked_holidays ?? [],
         );
 
