@@ -41,7 +41,7 @@ C:\laragon\www\rsu-back     Laravel 12 + Eloquent + Blade + Alpine.js + Tailwind
 4. **Abrir** `http://rsu-back.test` (el vhost de Laragon). Sin Laragon, `php artisan serve`
    y `http://localhost:8000`. `composer dev` levanta servidor, Vite y logs a la vez.
 
-**Acceso de prueba:** `admin@rsu.usat.edu.pe` / `password` (también entra con el DNI
+**Acceso de prueba:** `admin@rsu.com` / `password` (también entra con el DNI
 `10000001`). Todo el personal sembrado usa la misma clave.
 
 **Terminal de marcación:** `/marcacion` — pantalla pública, sin sesión iniciada, pensada para

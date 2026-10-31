@@ -21,6 +21,7 @@ class VehicleCatalogSeeder extends Seeder
         'Volvo' => ['FL 240', 'FM 370'],
         'Mitsubishi' => ['Canter', 'Fuso FI'],
         'Isuzu' => ['NPR 75', 'FVR'],
+        'Kia' => [],
     ];
 
     /** @var array<string, string> tipo => descripcion */
@@ -40,6 +41,7 @@ class VehicleCatalogSeeder extends Seeder
         'Naranja' => [234, 121, 38],
         'Azul' => [37, 99, 235],
         'Gris' => [107, 114, 128],
+        'Rojo' => [255, 0, 0],
     ];
 
     /**
@@ -58,8 +60,7 @@ class VehicleCatalogSeeder extends Seeder
         ['VEH-007', 'G5N-471', 'Hino', '500 Series', 'Compactador', 2023, 3, 14.0, 200.0, 10.0, 'operativo'],
         ['VEH-008', 'H8L-325', 'Volvo', 'FM 370', 'Volquete', 2016, 2, 15.0, 300.0, null, 'mantenimiento'],
         ['VEH-009', 'J2D-780', 'Mitsubishi', 'Fuso FI', 'Baranda', 2021, 3, 9.0, 200.0, null, 'operativo'],
-        ['VEH-010', 'K6V-194', 'Isuzu', 'FVR', 'Compactador', 2020, 3, 11.0, 200.0, 8.0, 'operativo'],
-        ['VEH-011', 'L4X-057', 'Toyota', 'Hilux', 'Motofurgón', 2024, 2, 1.5, 80.0, null, 'operativo'],
+        ['VEH-010', 'K6V-194', 'Isuzu', 'FVR', 'Compactador', 2021, 3, 11.0, 200.0, 8.0, 'operativo'],
     ];
 
     public function run(): void

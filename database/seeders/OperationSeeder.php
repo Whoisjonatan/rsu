@@ -2,16 +2,15 @@
 
 namespace Database\Seeders;
 
-use App\Models\District;
 use App\Models\Schedule;
 use App\Models\User;
 use App\Models\UserType;
-use App\Models\Zone;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
 /**
- * Funciones del personal (W06), turnos (W16), zonas (W13) y usuarios de acceso.
+ * Funciones del personal (W06), turnos (W16) y el usuario administrador. Las
+ * zonas van en ZoneSeeder; el personal se registra desde el sistema.
  */
 class OperationSeeder extends Seeder
 {
@@ -27,20 +26,7 @@ class OperationSeeder extends Seeder
     private const SCHEDULES = [
         ['Mañana', '06:00:00', '12:00:00'],
         ['Tarde', '12:00:00', '18:00:00'],
-        ['Noche', '18:00:00', '23:59:00'],
-    ];
-
-    /**
-     * Sin área: sale del perímetro, que se dibuja en W14.
-     *
-     * @var list<array{string, string}> zona, distrito
-     */
-    private const ZONES = [
-        ['José Leonardo Ortiz', 'José Leonardo Ortiz'],
-        ['La Victoria', 'La Victoria'],
-        ['Chiclayo Centro', 'Chiclayo'],
-        ['Pimentel', 'Pimentel'],
-        ['Monsefú', 'Monsefú'],
+        ['Noche', '20:28:00', '23:59:00'],
     ];
 
     public function run(): void
@@ -60,22 +46,9 @@ class OperationSeeder extends Seeder
             ]);
         }
 
-        foreach (self::ZONES as [$zoneName, $districtName]) {
-            $district = District::where('name', $districtName)->first();
-
-            if (! $district) {
-                continue;
-            }
-
-            Zone::updateOrCreate(['name' => $zoneName], [
-                'district_id' => $district->id,
-                'status' => 'activa',
-            ]);
-        }
-
         $admin = UserType::where('slug', 'administrador')->firstOrFail();
 
-        User::updateOrCreate(['email' => 'admin@rsu.usat.edu.pe'], [
+        User::updateOrCreate(['email' => 'admin@rsu.com'], [
             'name' => 'Administrador',
             'lastname' => 'RSU',
             'dni' => '10000001',

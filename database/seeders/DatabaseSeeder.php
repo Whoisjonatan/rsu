@@ -11,9 +11,9 @@ class DatabaseSeeder extends Seeder
         $this->call([
             UbigeoSeeder::class,
             OperationSeeder::class,
+            ZoneSeeder::class,
             VehicleCatalogSeeder::class,
-            PersonnelSeeder::class,
-            AttendanceSeeder::class,
         ]);
+        // El personal, sus contratos y la programación se registran desde el sistema.
     }
 }
