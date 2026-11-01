@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -61,6 +62,7 @@ class User extends Authenticatable
             'birthdate' => 'date:Y-m-d',
             'license_expiration' => 'date:Y-m-d',
             'password' => 'hashed',
+            'permissions' => 'array',
         ];
     }
 
@@ -160,13 +162,43 @@ class User extends Authenticatable
         ));
     }
 
-    /** Sin marcacion del dia no se puede iniciar el recorrido. */
-    public function attendedOn(string $date): bool
+    /**
+     * Sin marcacion no se puede iniciar el recorrido. La marcacion es por
+     * turno: con $scheduleId solo vale la entrada de ese turno.
+     */
+    public function attendedOn(string $date, ?int $scheduleId = null): bool
     {
         return $this->attendances()
             ->whereDate('date', $date)
+            ->when($scheduleId, fn (Builder $q) => $q->where('schedule_id', $scheduleId))
             ->whereIn('status', ['presente', 'tarde'])
             ->exists();
+    }
+
+    /**
+     * Los turnos en que sale ese día: los de los recorridos donde va como
+     * ocupante (ahí están la programación y los reemplazos hechos en W21),
+     * sin las programaciones desactivadas.
+     *
+     * @return Collection<int, Schedule>
+     */
+    public function scheduledShiftsOn(string $date): Collection
+    {
+        $ids = VehicleOccupant::query()
+            ->where('user_id', $this->id)
+            ->where('status', 'asignado')
+            ->whereHas('vehicleRoute', fn (Builder $q) => $q
+                ->whereDate('date_route', $date)
+                ->where(fn (Builder $q) => $q
+                    ->whereNull('scheduling_id')
+                    ->orWhereHas('scheduling', fn (Builder $q) => $q->where('status', '!=', 'inactiva'))))
+            ->with('vehicleRoute:id,schedule_id')
+            ->get()
+            ->pluck('vehicleRoute.schedule_id')
+            ->filter()
+            ->unique();
+
+        return Schedule::whereKey($ids->all())->orderBy('time_start')->get();
     }
 
     /** El contrato que cubre hoy, si lo hay. */
@@ -232,6 +264,76 @@ class User extends Authenticatable
             ->where('email', $username)
             ->orWhere('dni', $username)
             ->first();
+    }
+
+    /** Usuarios del sistema (Administrador, Supervisor): Gestión de usuarios. */
+    public function scopeSystemUsers(Builder $query): Builder
+    {
+        return $query->whereHas('usertype', fn (Builder $q) => $q->systemUsers());
+    }
+
+    /** Personal operativo: todos menos los usuarios del sistema (Personal, W07). */
+    public function scopeStaff(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $q) => $q
+            ->whereNull('usertype_id')
+            ->orWhereHas('usertype', fn (Builder $t) => $t->staffFunctions()));
+    }
+
+    /** Si es un usuario del sistema; solo ellos entran al panel. */
+    public function isSystemUser(): bool
+    {
+        return (bool) $this->usertype?->isSystemUser();
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->usertype?->slug === UserType::ADMIN;
+    }
+
+    /**
+     * Si tiene el permiso "módulo.acción" (App\Support\Permissions). El
+     * Administrador los tiene todos; el resto, los que se le asignaron en
+     * Lista de usuarios › Permisos. El personal operativo no tiene ninguno.
+     */
+    public function hasPermission(string $key): bool
+    {
+        if (! $this->isSystemUser() || $this->status !== 'activo') {
+            return false;
+        }
+
+        return $this->isAdmin() || in_array($key, $this->permissions ?? [], true);
+    }
+
+    /** @param  iterable<string>  $keys */
+    public function hasAnyPermission(iterable $keys): bool
+    {
+        foreach ($keys as $key) {
+            if ($this->hasPermission($key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Por qué no se puede quitar o rebajar a este usuario, o null si se puede.
+     * El sistema nunca se queda sin un administrador activo.
+     */
+    public function lastAdminBlocker(): ?string
+    {
+        if (! $this->isAdmin() || $this->status !== 'activo') {
+            return null;
+        }
+
+        $others = static::query()
+            ->whereKeyNot($this->id)
+            ->where('status', 'activo')
+            ->whereHas('usertype', fn (Builder $q) => $q->where('slug', UserType::ADMIN))
+            ->exists();
+
+        return $others ? null : 'Es el único administrador activo: el sistema no puede quedarse sin uno.';
     }
 
     /** URL pública de la foto (W08), o null si no tiene. */
@@ -311,9 +413,9 @@ class User extends Authenticatable
         $today = now()->toDateString();
 
         return [
-            'total' => static::count(),
-            'con_contrato' => static::whereHas('contracts', fn (Builder $c) => $c->activeOn($today))->count(),
-            'de_vacaciones' => static::whereHas('vacations', fn (Builder $v) => $v->covering($today))->count(),
+            'total' => static::staff()->count(),
+            'con_contrato' => static::staff()->whereHas('contracts', fn (Builder $c) => $c->activeOn($today))->count(),
+            'de_vacaciones' => static::staff()->whereHas('vacations', fn (Builder $v) => $v->covering($today))->count(),
         ];
     }
 
@@ -330,6 +432,10 @@ class User extends Authenticatable
 
         if ($actor && $this->is($actor)) {
             return 'No puedes eliminar tu propio usuario.';
+        }
+
+        if ($blocker = $this->lastAdminBlocker()) {
+            return "No se puede eliminar: {$blocker}";
         }
 
         return null;

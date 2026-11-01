@@ -1,6 +1,10 @@
 {{-- W08 Ficha de personal, con las pestañas de W09 (contratos) y W10 (vacaciones). --}}
 @php
     $tabs = ['datos' => 'Datos personales', 'contratos' => 'Contratos', 'vacaciones' => 'Vacaciones'];
+    // En la edición, solo las pestañas que permiten los permisos del usuario.
+    if (isset($allowedTabs)) {
+        $tabs = \Illuminate\Support\Arr::only($tabs, $allowedTabs);
+    }
 @endphp
 
 <x-layouts.app :title="$person ? $person->full_name : 'Registrar personal'"

@@ -49,10 +49,12 @@
         <x-card>
             <x-card-header title="Períodos registrados"
                 description="Las solicitudes entran pendientes. Solo las aprobadas bloquean a la persona en el módulo de programación.">
+                @can('vacations.create')
                 <button type="button" class="btn btn-primary btn-sm" @click="create()" @disabled(! $summary['eligible'])>
                     <x-lucide-plus class="size-3.5" />
                     Registrar vacaciones
                 </button>
+                @endcan
             </x-card-header>
 
             <div class="overflow-x-auto">
@@ -92,7 +94,7 @@
                                 </td>
                                 <td>
                                     <div class="flex justify-end gap-1">
-                                        @if ($vacation->isPending())
+                                        @if ($vacation->isPending() && auth()->user()->can('vacations.edit'))
                                             <form method="POST" action="{{ route('vacations.approve', [$person, $vacation]) }}">
                                                 @csrf
                                                 @method('PATCH')
@@ -118,7 +120,8 @@
                                                 <x-lucide-pencil class="size-3.5" />
                                             </button>
                                         @endif
-                                        @if ($blocker = $vacation->deletionBlocker())
+                                        @cannot('vacations.delete')
+                                        @elseif ($blocker = $vacation->deletionBlocker())
                                             <span class="grid size-7 place-items-center text-stone-300" title="{{ $blocker }}">
                                                 <x-lucide-lock class="size-3.5" />
                                             </span>
@@ -128,7 +131,7 @@
                                                 @click="askDelete(@js(['id' => $vacation->id, 'label' => $range]))">
                                                 <x-lucide-trash-2 class="size-3.5" />
                                             </button>
-                                        @endif
+                                        @endcannot
                                     </div>
                                 </td>
                             </tr>

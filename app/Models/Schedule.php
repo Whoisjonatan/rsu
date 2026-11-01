@@ -60,6 +60,20 @@ class Schedule extends Model
         return $date->startOfDay()->addHours($hour)->addMinutes($minute);
     }
 
+    /** Hora de fin del turno en la fecha dada (el fin siempre es posterior al inicio). */
+    public function endsAt(CarbonImmutable $date): CarbonImmutable
+    {
+        [$hour, $minute] = array_map('intval', explode(':', (string) $this->time_end));
+
+        return $date->startOfDay()->addHours($hour)->addMinutes($minute);
+    }
+
+    /** Hasta cuándo se acepta la salida del turno de esa fecha. */
+    public function exitClosesAt(CarbonImmutable $date): CarbonImmutable
+    {
+        return $this->endsAt($date)->addMinutes(Attendance::EXIT_CLOSES_AFTER);
+    }
+
     /**
      * Ventana de marcacion del turno para esa fecha.
      *
@@ -85,11 +99,14 @@ class Schedule extends Model
 
     /**
      * El turno cuya ventana de marcacion cubre ese instante. Si varias se
-     * solapan, gana la que empieza mas cerca.
+     * solapan, gana la que empieza mas cerca. Con $schedules se busca solo
+     * entre esos: los turnos que la persona tiene programados ese día.
+     *
+     * @param  Collection<int, self>|null  $schedules
      */
-    public static function forMarking(CarbonImmutable $moment): ?self
+    public static function forMarking(CarbonImmutable $moment, ?Collection $schedules = null): ?self
     {
-        return static::all()
+        return ($schedules ?? static::all())
             ->filter(fn (self $schedule) => $schedule->windowCovers($moment))
             ->sortBy(fn (self $schedule) => abs($schedule->startsAt($moment)->diffInSeconds($moment)))
             ->first();
@@ -99,17 +116,20 @@ class Schedule extends Model
      * Las ventanas de todos los turnos, para mostrarlas en el terminal cuando
      * la marcacion cae fuera de horario.
      *
-     * @return Collection<int, array{name: string, opens: string, closes: string}>
+     * @param  Collection<int, self>|null  $schedules  Solo estos turnos; si no, todos.
+     * @return Collection<int, array{name: string, opens: string, closes: string, ends: string, exit_closes: string}>
      */
-    public static function markingWindows(CarbonImmutable $date): Collection
+    public static function markingWindows(CarbonImmutable $date, ?Collection $schedules = null): Collection
     {
-        return static::orderBy('time_start')->get()->map(function (self $schedule) use ($date) {
+        return ($schedules ?? static::all())->sortBy('time_start')->values()->map(function (self $schedule) use ($date) {
             $window = $schedule->markingWindow($date);
 
             return [
                 'name' => $schedule->name,
                 'opens' => $window['opens']->format('H:i'),
                 'closes' => $window['closes']->format('H:i'),
+                'ends' => $schedule->endsAt($date)->format('H:i'),
+                'exit_closes' => $schedule->exitClosesAt($date)->format('H:i'),
             ];
         });
     }

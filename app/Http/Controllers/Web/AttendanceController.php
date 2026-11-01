@@ -41,11 +41,13 @@ class AttendanceController extends Controller
         $data = $request->validate([
             'dni' => ['required', 'digits:8'],
             'password' => ['required', 'string'],
+            // Cada botón del terminal manda el suyo: entrada o salida del turno.
+            'type' => ['required', 'in:entrada,salida'],
         ], [
             'dni.digits' => 'El DNI debe tener 8 dígitos.',
         ]);
 
-        $result = $this->attendances->mark($data['dni'], $data['password']);
+        $result = $this->attendances->mark($data['dni'], $data['password'], $data['type']);
 
         // Nunca se devuelve el DNI ni la clave al formulario: el siguiente
         // trabajador no debe encontrarlos escritos.
@@ -104,7 +106,7 @@ class AttendanceController extends Controller
             'filters' => $filters,
             'report' => $report,
             'filterErrors' => $validator->errors(),
-            'people' => User::orderBy('lastname')->orderBy('name')->get(['id', 'name', 'lastname', 'dni']),
+            'people' => User::staff()->orderBy('lastname')->orderBy('name')->get(['id', 'name', 'lastname', 'dni']),
         ]);
     }
 
@@ -126,7 +128,7 @@ class AttendanceController extends Controller
             // El BOM hace que Excel reconozca los acentos.
             fwrite($out, "\u{FEFF}");
 
-            $base = ['Fecha', 'Turno', 'Hora de marcación', 'Zona', 'Estado'];
+            $base = ['Fecha', 'Turno', 'Entrada', 'Salida', 'Zona', 'Estado', 'Observación'];
             fputcsv($out, $withPerson ? ['DNI', 'Apellidos y nombres', ...$base] : $base, ';');
 
             foreach ($report['data'] as $row) {
@@ -134,8 +136,14 @@ class AttendanceController extends Controller
                     CarbonImmutable::parse($row['date'])->format('d/m/Y'),
                     $row['schedule'] ?? '',
                     $row['check_in'] ?? '',
+                    $row['check_out'] ?? '',
                     $row['zone'] ?? '',
                     Status::label('attendance', $row['status']),
+                    match ($row['exit_state'] ?? null) {
+                        'anticipada' => 'Salida anticipada (el turno termina a las '.$row['shift_end'].')',
+                        'sin_salida' => 'Sin salida',
+                        default => '',
+                    },
                 ];
 
                 fputcsv($out, $withPerson ? [$row['person']['dni'], $row['person']['full_name'], ...$line] : $line, ';');

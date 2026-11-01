@@ -113,7 +113,7 @@ class VehicleRoute extends Model
                 continue; // Es el registro del saliente; el entrante va aparte.
             }
 
-            $attended = $occupant->user?->attendedOn($date) ?? false;
+            $attended = $occupant->user?->attendedOn($date, $this->schedule_id) ?? false;
 
             $occupants[] = [
                 'occupant_id' => $occupant->id,
@@ -127,7 +127,7 @@ class VehicleRoute extends Model
 
             if (! $attended) {
                 $blockers[] = sprintf(
-                    '%s (%s) no marcó asistencia. Reemplázalo por personal de reserva.',
+                    '%s (%s) no marcó entrada en este turno. Reemplázalo por personal de reserva.',
                     $occupant->user?->full_name ?? 'El personal asignado',
                     $occupant->usertype?->name ?? 'sin función',
                 );
@@ -200,7 +200,7 @@ class VehicleRoute extends Model
             ->get()
             ->filter(fn (User $person) => $person->datesWithoutContract([$date]) === []
                 && $person->datesOnVacation([$date]) === []
-                && $person->attendedOn($date))
+                && $person->attendedOn($date, $this->schedule_id))
             ->values();
     }
 
@@ -243,17 +243,22 @@ class VehicleRoute extends Model
             ->groupBy('status')
             ->pluck('total', 'status');
 
-        // "Personal ausente" del panel: gente con recorrido hoy que no marcó.
-        // Se cuentan personas y no asignaciones, porque alguien programado en
-        // dos turnos del mismo día sigue siendo un solo ausente.
+        // "Personal ausente" del panel: gente con recorrido hoy que no marcó
+        // entrada en el turno de ese recorrido (la marcación es por turno). Se
+        // cuentan personas y no asignaciones, porque alguien que falta en dos
+        // turnos del mismo día sigue siendo un solo ausente.
         $ausentes = VehicleOccupant::query()
-            ->where('status', 'asignado')
-            ->whereHas('vehicleRoute', fn ($q) => $q->whereDate('date_route', $date))
-            ->whereDoesntHave('user.attendances', fn ($q) => $q
-                ->whereDate('date', $date)
-                ->whereIn('status', ['presente', 'tarde']))
+            ->join('vehicleroutes', 'vehicleroutes.id', '=', 'vehicleoccupants.vehicleroute_id')
+            ->where('vehicleoccupants.status', 'asignado')
+            ->whereDate('vehicleroutes.date_route', $date)
+            ->whereNotExists(fn ($q) => $q
+                ->from('attendances')
+                ->whereColumn('attendances.user_id', 'vehicleoccupants.user_id')
+                ->whereColumn('attendances.schedule_id', 'vehicleroutes.schedule_id')
+                ->whereDate('attendances.date', $date)
+                ->whereIn('attendances.status', ['presente', 'tarde']))
             ->distinct()
-            ->count('user_id');
+            ->count('vehicleoccupants.user_id');
 
         $asignados = VehicleOccupant::query()
             ->where('status', 'asignado')

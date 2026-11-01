@@ -19,10 +19,12 @@
 })">
     <x-card>
         <x-card-header title="Contratos" description="El contrato vigente condiciona si la persona puede ser programada.">
+            @can('contracts.create')
             <button type="button" class="btn btn-primary btn-sm" @click="create()">
                 <x-lucide-plus class="size-3.5" />
                 Registrar contrato
             </button>
+            @endcan
         </x-card-header>
 
         <div class="overflow-x-auto">
@@ -64,7 +66,7 @@
                                 @endif
                             </td>
                             <td>
-                                <x-row-actions :label="'contrato '.$contract->code" :row="[
+                                <x-row-actions :editable="auth()->user()->can('contracts.edit')" :deletable="auth()->user()->can('contracts.delete')" :label="'contrato '.$contract->code" :row="[
                                     'id' => $contract->id,
                                     'type' => $contract->type,
                                     'regime' => $contract->regime,
@@ -73,7 +75,8 @@
                                     'salary' => $contract->salary,
                                     'probation_months' => $contract->probation_months,
                                 ]">
-                                    @if ($contract->canBeDeactivated())
+                                    @cannot('contracts.edit')
+                                    @elseif ($contract->canBeDeactivated())
                                         <button type="button" class="icon-btn" title="Desactivar"
                                             aria-label="Desactivar contrato {{ $contract->code }}"
                                             @click="toDeactivate = @js(['id' => $contract->id, 'label' => $contract->code])">
@@ -88,7 +91,7 @@
                                                 <x-lucide-power class="size-3.5" />
                                             </button>
                                         </form>
-                                    @endif
+                                    @endcannot
                                 </x-row-actions>
                             </td>
                         </tr>

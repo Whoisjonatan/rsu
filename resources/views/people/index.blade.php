@@ -15,10 +15,12 @@
 <x-layouts.app title="Personal"
     :subtitle="$summary['total'].' personas registradas · '.$summary['con_contrato'].' con contrato vigente · '.$summary['de_vacaciones'].' de vacaciones'">
     <x-slot:actions>
+        @can('people.create')
         <a href="{{ route('people.create') }}" class="btn btn-primary">
             <x-lucide-plus class="size-4" />
             Registrar personal
         </a>
+        @endcan
     </x-slot:actions>
 
     <div x-data="{
@@ -104,23 +106,31 @@
                                 <td><x-datetime :value="$person->created_at" /></td>
                                 <td>
                                     <div class="flex justify-end gap-1">
+                                        @can('contracts.view')
                                         <a href="{{ route('people.edit', [$person, 'tab' => 'contratos']) }}" class="icon-btn"
                                             title="Contratos" aria-label="Contratos de {{ $person->full_name }}">
                                             <x-lucide-file-text class="size-3.5" />
                                         </a>
+                                        @endcan
+                                        @can('vacations.view')
                                         <a href="{{ route('people.edit', [$person, 'tab' => 'vacaciones']) }}" class="icon-btn"
                                             title="Vacaciones" aria-label="Vacaciones de {{ $person->full_name }}">
                                             <x-lucide-tree-palm class="size-3.5" />
                                         </a>
+                                        @endcan
+                                        @can('people.edit')
                                         <a href="{{ route('people.edit', $person) }}" class="icon-btn" title="Editar"
                                             aria-label="Editar {{ $person->full_name }}">
                                             <x-lucide-pencil class="size-3.5" />
                                         </a>
+                                        @endcan
+                                        @can('people.delete')
                                         <button type="button" class="icon-btn icon-btn-danger" title="Eliminar"
                                             aria-label="Eliminar {{ $person->full_name }}"
                                             @click="toDelete = @js(['id' => $person->id, 'label' => "{$person->full_name} · DNI {$person->dni}"])">
                                             <x-lucide-trash-2 class="size-3.5" />
                                         </button>
+                                        @endcan
                                     </div>
                                 </td>
                             </tr>

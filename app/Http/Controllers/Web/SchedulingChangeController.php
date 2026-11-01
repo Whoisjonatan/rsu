@@ -11,10 +11,12 @@ use App\Models\UserType;
 use App\Models\Vehicle;
 use App\Models\Zone;
 use App\Services\Scheduling\BulkRescheduling;
+use App\Services\Scheduling\Rescheduling;
 use App\Support\Status;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 /**
@@ -75,7 +77,7 @@ class SchedulingChangeController extends Controller
      * del texto guardado, que ya trae sus horas: si después se editara el
      * turno, el historial seguiría diciendo lo que era.
      *
-     * @param  \Illuminate\Support\Collection<int, SchedulingChange>  $changes
+     * @param  Collection<int, SchedulingChange>  $changes
      * @return array<int, array<string, mixed>>
      */
     private function details($changes): array
@@ -128,14 +130,22 @@ class SchedulingChangeController extends Controller
     }
 
     /**
-     * Quita el registro del historial. No deshace el cambio: la programación
-     * se queda con el turno, vehículo o personal que tiene ahora.
+     * Elimina el cambio y lo deshace: la programación vuelve al turno,
+     * vehículo o personal que tenía antes (ver Rescheduling::revert). Si eso
+     * ya no es posible, no se borra nada y se dice por qué.
      */
     public function destroy(SchedulingChange $change): RedirectResponse
     {
-        $change->delete();
+        $change->loadMissing('scheduling');
+        $code = $change->scheduling?->code;
 
-        return back()->with('success', "Cambio de {$change->typeLabel()} de la programación {$change->scheduling?->code} eliminado del historial.");
+        if ($error = Rescheduling::revert($change)) {
+            return back()->with('error', $error);
+        }
+
+        return back()->with('success', $change->old_value
+            ? "Cambio eliminado: la programación {$code} vuelve a tener {$change->old_value} en lugar de {$change->new_value}."
+            : "Cambio de {$change->typeLabel()} de la programación {$code} eliminado.");
     }
 
     /** El resumen del cambio masivo: qué programaciones cambian y cuáles se omiten. No guarda nada. */

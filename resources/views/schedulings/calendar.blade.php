@@ -28,10 +28,12 @@
 
 <x-layouts.app title="Calendario semanal" :subtitle="$rangeLabel.($selectedZone ? ' · zona '.$selectedZone->name : '')">
     <x-slot:actions>
+        @can('schedulings.create')
         <a href="{{ route('schedulings.create') }}" class="btn btn-primary">
             <x-lucide-plus class="size-4" />
             Programar
         </a>
+        @endcan
     </x-slot:actions>
 
     <div x-data="startRoute()">

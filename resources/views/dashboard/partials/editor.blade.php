@@ -91,8 +91,12 @@
                             Personal
                             <x-badge tone="amber" x-show="changed.personal" x-cloak>Cambia</x-badge>
                         </h3>
-                        <p class="mt-0.5 text-[12px] text-stone-500">
+                        <p class="mt-0.5 text-[12px] text-stone-500" x-show="!isToday">
                             Solo se cambia al personal que no marcó asistencia, por alguien libre en el turno elegido.
+                        </p>
+                        <p class="mt-0.5 text-[12px] text-stone-500" x-show="isToday">
+                            Solo se cambia al personal que no marcó asistencia, por alguien libre que ya
+                            <strong>marcó entrada en el turno elegido</strong>.
                         </p>
                     </div>
 
@@ -118,9 +122,9 @@
                                 </p>
                                 <select x-show="!member.present" x-model="editor.people[member.id]" class="field bg-white"
                                     :aria-label="'Nuevo personal en lugar de ' + member.full_name">
-                                    <option value="" x-text="personOptions(member).length ? 'Mantener' : 'Nadie libre en el turno'"></option>
+                                    <option value="" x-text="personOptions(member).length ? 'Mantener' : (isToday ? 'Nadie libre marcó entrada en el turno' : 'Nadie libre en el turno')"></option>
                                     <template x-for="person in personOptions(member)" :key="person.id">
-                                        <option :value="String(person.id)" x-text="person.full_name + markLabel(person)"></option>
+                                        <option :value="String(person.id)" x-text="person.full_name + markLabel(person, editor.schedule_id)"></option>
                                     </template>
                                 </select>
                             </li>

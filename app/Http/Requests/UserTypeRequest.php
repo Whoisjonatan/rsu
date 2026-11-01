@@ -35,7 +35,7 @@ class UserTypeRequest extends FormRequest
      *
      * @return array<string, mixed>
      */
-    public function typeData(?UserType $existing = null): array
+    public function typeData(?UserType $existing = null, string $kind = UserType::KIND_STAFF): array
     {
         $data = $this->validated();
 
@@ -43,8 +43,10 @@ class UserTypeRequest extends FormRequest
             $data['slug'] = Str::slug($data['name']);
         }
 
+        // El grupo lo fija la pantalla donde se crea y no cambia después.
         if (! $existing) {
             $data['is_system'] = false;
+            $data['kind'] = $kind;
         }
 
         return $data;
@@ -55,6 +57,7 @@ class UserTypeRequest extends FormRequest
      */
     public function messages(): array
     {
-        return ['name.unique' => 'Ya existe una función con ese nombre.'];
+        // Los nombres son únicos entre los dos grupos: un mismo nombre no puede ser rol y función a la vez.
+        return ['name.unique' => 'Ya existe una función o un tipo de usuario con ese nombre.'];
     }
 }

@@ -4,11 +4,30 @@
     $isToday = $date->isToday();
     $isFuture = $date->isFuture() && ! $isToday;
 
+    // Cada indicador filtra las cards de abajo: clave, etiqueta, valor, icono, fondo y anillo al estar activo.
     $tiles = [
-        ['Total de programaciones', $totals['total'], 'calendar-check-2', 'bg-brand-600'],
-        ['Programaciones completas', $totals['completas'], 'circle-check', 'bg-emerald-600'],
-        ['Programaciones incompletas', $totals['incompletas'], 'triangle-alert', 'bg-red-600'],
-        ['Personal faltante', $totals['faltantes'], 'user-x', 'bg-amber-500'],
+        ['total', 'Total de programaciones', $totals['total'], 'calendar-check-2', 'bg-brand-600', 'ring-brand-600'],
+        ['completa', 'Programaciones completas', $totals['completas'], 'circle-check', 'bg-emerald-600', 'ring-emerald-600'],
+        ['incompleta', 'Programaciones incompletas', $totals['incompletas'], 'triangle-alert', 'bg-red-600', 'ring-red-600'],
+        ['faltantes', 'Personal faltante', $totals['faltantes'], 'user-x', 'bg-amber-500', 'ring-amber-500'],
+    ];
+
+    // "Personal faltante" muestra las programaciones a las que les falta alguien (como el total, sin las pendientes).
+    $cardFilters = fn (array $card) => array_values(array_filter([
+        'total',
+        $card['status'] === 'completa' ? 'completa' : null,
+        $card['status'] === 'incompleta' ? 'incompleta' : null,
+        $card['status'] !== 'pendiente' && $card['missing'] > 0 ? 'faltantes' : null,
+    ]));
+
+    $filterCounts = collect(array_column($tiles, 0))
+        ->mapWithKeys(fn ($key) => [$key => collect($cards)->filter(fn ($card) => in_array($key, $cardFilters($card), true))->count()])
+        ->all();
+
+    $filterLabels = [
+        'completa' => 'programaciones completas',
+        'incompleta' => 'programaciones incompletas',
+        'faltantes' => 'programaciones con personal faltante',
     ];
 
     // Cabecera de cada card y su etiqueta, según el estado del día.
@@ -21,26 +40,31 @@
 
 <x-layouts.app title="Dashboard" subtitle="Monitoreo diario de las programaciones y la asistencia del personal">
     <x-slot:actions>
+        @can('schedulings.view')
         <a href="{{ route('schedulings.index') }}" class="btn btn-primary">
             <x-lucide-list-checks class="size-4" />
             Ir a Programación
         </a>
+        @endcan
     </x-slot:actions>
 
     <div class="space-y-5"
-        x-data="dailyDashboard({ options: @js($options), reasons: @js($reasons), updateUrl: @js(route('schedulings.update', '__ID__')) })">
+        x-data="dailyDashboard({ options: @js($options), reasons: @js($reasons), updateUrl: @js(route('schedulings.update', '__ID__')), counts: @js($filterCounts), isToday: @js($isToday), canEdit: @js(auth()->user()->can('schedulings.edit')) })">
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            @foreach ($tiles as [$label, $value, $icon, $bg])
-                <div class="{{ $bg }} relative overflow-hidden rounded-xl px-5 py-4 text-white shadow-sm">
+            @foreach ($tiles as [$key, $label, $value, $icon, $bg, $ring])
+                <button type="button" @click="setFilter(@js($key))" :aria-pressed="filter === @js($key)"
+                    class="{{ $bg }} relative cursor-pointer overflow-hidden rounded-xl px-5 py-4 text-left text-white shadow-sm ring-offset-2 transition hover:brightness-110 focus-visible:outline-none"
+                    :class="filter === @js($key) ? 'ring-2 {{ $ring }}' : (filter !== 'total' && 'opacity-60 hover:opacity-100')">
                     <x-dynamic-component :component="'lucide-'.$icon" class="absolute -right-2 -bottom-3 size-20 text-white/15" />
                     <p class="relative text-3xl font-bold tabular-nums">{{ $value }}</p>
                     <p class="relative mt-1 text-[13px] font-medium text-white/90">{{ $label }}</p>
-                </div>
+                </button>
             @endforeach
         </div>
 
         <x-card>
             <form method="GET" class="flex flex-wrap items-end gap-3 p-4">
+                <input type="hidden" name="ver" :value="filter" :disabled="filter === 'total'">
                 <label>
                     <span class="label">Fecha</span>
                     <input type="date" name="date" value="{{ $filters['date'] }}" class="field w-auto min-w-40">
@@ -86,10 +110,23 @@
                 <p class="mt-1 text-[12px] text-stone-500">Cambia la fecha o los filtros, o registra una programación.</p>
             </x-card>
         @else
+            <div x-show="filter !== 'total'" x-cloak class="flex items-center gap-2 text-[12px] text-stone-500">
+                <x-lucide-filter class="size-3.5" />
+                <span x-text="'Mostrando ' + counts[filter] + ' ' + (@js($filterLabels)[filter] ?? '')"></span>
+                <button type="button" class="font-medium text-brand-700 hover:underline" @click="setFilter('total')">Ver todas</button>
+            </div>
+
+            <x-card x-show="counts[filter] === 0" x-cloak class="px-6 py-12 text-center">
+                <x-lucide-filter-x class="mx-auto size-8 text-stone-300" />
+                <p class="mt-3 text-[13px] font-medium text-stone-700"
+                    x-text="'No hay ' + (@js($filterLabels)[filter] ?? 'programaciones') + ' para este día'"></p>
+                <button type="button" class="btn btn-secondary mt-4" @click="setFilter('total')">Ver todas</button>
+            </x-card>
+
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 @foreach ($cards as $card)
                     @php [$stateLabel, $headerBg, $badge, $stateIcon] = $states[$card['status']]; @endphp
-                    <x-card class="overflow-hidden">
+                    <x-card class="overflow-hidden" x-show="{{ \Illuminate\Support\Js::from($cardFilters($card)) }}.includes(filter)">
                         <header class="{{ $headerBg }} flex items-center gap-2 px-4 py-2.5 text-white">
                             <x-lucide-map-pin class="size-4 shrink-0" />
                             <span class="truncate text-[13px] font-semibold">Zona {{ $card['zone'] }}</span>
@@ -193,7 +230,8 @@
                                     <th>Nombre</th>
                                     <th>DNI</th>
                                     <th>Marcación</th>
-                                    <th>Hora</th>
+                                    <th>Entrada</th>
+                                    <th>Salida</th>
                                     <th class="text-right">Acción</th>
                                 </tr>
                             </thead>
@@ -211,6 +249,11 @@
                                                 :class="badgeClass(member.mark[1])" x-text="member.mark[0]"></span>
                                         </td>
                                         <td class="tabular-nums" x-text="member.check_in ?? '—'"></td>
+                                        <td class="tabular-nums">
+                                            <span x-text="member.check_out ?? '—'"></span>
+                                            <span x-show="member.exit" class="ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset"
+                                                :class="badgeClass(member.exit?.[1])" x-text="member.exit?.[0]"></span>
+                                        </td>
                                         <td class="text-right">
                                             <button type="button" x-show="canReplace(member)" class="btn btn-secondary btn-sm"
                                                 :class="replacing?.user_id === member.user_id && 'border-brand-300 bg-brand-50 text-brand-700'"
@@ -223,7 +266,7 @@
                                     </tr>
                                 </template>
                                 <tr x-show="!detail?.crew?.length">
-                                    <td colspan="6" class="py-6 text-center text-[12px] text-stone-500">Sin personal asignado.</td>
+                                    <td colspan="7" class="py-6 text-center text-[12px] text-stone-500">Sin personal asignado.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -246,15 +289,15 @@
                                 <x-badge class="capitalize"><span x-text="replacing.role"></span></x-badge>
                             </h3>
                             <p class="mt-0.5 text-[12px] text-stone-500">
-                                Se ofrece a quien tiene contrato, no está de vacaciones y no va en otra programación de este turno. Primero, los que ya marcaron.
+                                Solo aparece quien ya <strong>marcó entrada en este turno</strong>, tiene contrato, no está de vacaciones y no va en otra programación del turno.
                             </p>
                         </div>
                         <div class="grid gap-3 sm:grid-cols-2">
                             <x-field label="Nuevo personal" for="replace_new" required class="sm:col-span-2">
                                 <select id="replace_new" x-model="replacing.new_id" class="field">
-                                    <option value="" x-text="replaceOptions.length ? 'Selecciona ' + (replacing.role === 'conductor' ? 'un conductor disponible' : 'un ayudante disponible') : 'No hay personal disponible en este turno'"></option>
+                                    <option value="" x-text="replaceOptions.length ? 'Selecciona ' + (replacing.role === 'conductor' ? 'un conductor presente' : 'un ayudante presente') : 'Nadie libre ha marcado entrada en este turno'"></option>
                                     <template x-for="person in replaceOptions" :key="person.id">
-                                        <option :value="person.id" x-text="person.full_name + markLabel(person)"></option>
+                                        <option :value="person.id" x-text="person.full_name + markLabel(person, detail.editor.schedule_id)"></option>
                                     </template>
                                 </select>
                             </x-field>
@@ -286,11 +329,13 @@
             </x-modal.body>
             <x-modal.footer>
                 <button type="button" class="btn btn-secondary" @click="closeDetail()">Cerrar</button>
+                @can('schedulings.calendar')
                 <a href="{{ route('schedulings.calendar', ['semana' => $filters['date']]) }}" class="btn btn-secondary">
                     <x-lucide-calendar-days class="size-4" />
                     Ver en el calendario
                 </a>
-                <button type="button" x-show="detail?.editable" class="btn btn-primary" @click="openEditor(detail)">
+                @endcan
+                <button type="button" x-show="detail?.editable && canEdit" class="btn btn-primary" @click="openEditor(detail)">
                     <x-lucide-pencil class="size-4" />
                     Modificar programación
                 </button>

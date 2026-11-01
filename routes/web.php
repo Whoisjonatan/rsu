@@ -15,6 +15,7 @@ use App\Http\Controllers\Web\ScheduleController;
 use App\Http\Controllers\Web\SchedulingChangeController;
 use App\Http\Controllers\Web\SchedulingController;
 use App\Http\Controllers\Web\StaffGroupController;
+use App\Http\Controllers\Web\SystemUserController;
 use App\Http\Controllers\Web\UserTypeController;
 use App\Http\Controllers\Web\VacationController;
 use App\Http\Controllers\Web\VehicleCatalogController;
@@ -43,7 +44,7 @@ Route::post('marcacion', [AttendanceController::class, 'mark'])
     ->middleware('throttle:30,1')
     ->name('attendances.mark');
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'permission'])->group(function () {
     Route::post('logout', [AuthController::class, 'destroy'])->name('logout');
 
     // El panel (W02) se retiró: la raíz lleva a Inicio.
@@ -176,6 +177,23 @@ Route::middleware('auth')->group(function () {
     Route::post('motivos', [ChangeReasonController::class, 'store'])->name('change-reasons.store');
     Route::put('motivos/{reason}', [ChangeReasonController::class, 'update'])->whereNumber('reason')->name('change-reasons.update');
     Route::delete('motivos/{reason}', [ChangeReasonController::class, 'destroy'])->whereNumber('reason')->name('change-reasons.destroy');
+
+    // Gestión de usuarios: los usuarios del sistema (Administrador y Supervisor). Solo para administradores.
+    // Tipos de usuario (roles del sistema): el mismo catálogo que Funciones, con kind "sistema".
+    Route::get('usuarios/tipos', [UserTypeController::class, 'index'])->defaults('kind', 'sistema')->name('system-usertypes.index');
+    Route::post('usuarios/tipos', [UserTypeController::class, 'store'])->defaults('kind', 'sistema')->name('system-usertypes.store');
+    Route::put('usuarios/tipos/{usertype}', [UserTypeController::class, 'update'])->defaults('kind', 'sistema')->name('system-usertypes.update');
+    Route::delete('usuarios/tipos/{usertype}', [UserTypeController::class, 'destroy'])->defaults('kind', 'sistema')->name('system-usertypes.destroy');
+    Route::get('usuarios', [SystemUserController::class, 'index'])->name('users.index');
+    Route::get('usuarios/nuevo', [SystemUserController::class, 'create'])->name('users.create');
+    Route::post('usuarios', [SystemUserController::class, 'store'])->name('users.store');
+    Route::get('usuarios/{user}', [SystemUserController::class, 'edit'])->whereNumber('user')->name('users.edit');
+    Route::put('usuarios/{user}', [SystemUserController::class, 'update'])->whereNumber('user')->name('users.update');
+    Route::delete('usuarios/{user}', [SystemUserController::class, 'destroy'])->whereNumber('user')->name('users.destroy');
+    Route::get('usuarios/{user}/permisos', [SystemUserController::class, 'permissions'])->whereNumber('user')->name('users.permissions.edit');
+    Route::put('usuarios/{user}/permisos', [SystemUserController::class, 'updatePermissions'])->whereNumber('user')->name('users.permissions.update');
+    Route::post('usuarios/{user}/foto', [SystemUserController::class, 'uploadPhoto'])->whereNumber('user')->name('users.photo.store');
+    Route::delete('usuarios/{user}/foto', [SystemUserController::class, 'deletePhoto'])->whereNumber('user')->name('users.photo.destroy');
 
     // Maestros se separó en dos módulos; las direcciones viejas siguen funcionando.
     Route::redirect('maestros', '/vehiculos/catalogos');

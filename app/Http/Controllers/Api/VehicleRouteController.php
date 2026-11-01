@@ -167,6 +167,7 @@ class VehicleRouteController extends Controller
         $marks = Attendance::query()
             ->whereIn('user_id', $reserves->pluck('id'))
             ->whereDate('date', $date)
+            ->where('schedule_id', $vehicleroute->schedule_id)
             ->whereIn('status', ['presente', 'tarde'])
             ->get()
             ->keyBy('user_id');
@@ -213,9 +214,9 @@ class VehicleRouteController extends Controller
         $date = $vehicleroute->date_route->toDateString();
 
         // El reemplazo tiene que cumplir lo mismo que se le exige al titular.
-        if (! $replacement->attendedOn($date)) {
+        if (! $replacement->attendedOn($date, $vehicleroute->schedule_id)) {
             return response()->json([
-                'message' => $replacement->full_name.' tampoco marcó asistencia hoy.',
+                'message' => $replacement->full_name.' tampoco marcó entrada en este turno.',
             ], 422);
         }
 

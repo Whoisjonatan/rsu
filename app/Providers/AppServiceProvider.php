@@ -2,14 +2,17 @@
 
 namespace App\Providers;
 
+use App\Models\User;
 use App\Services\Dni\ConsultasApiLookup;
 use App\Services\Dni\DniLookup;
 use App\Services\Dni\NullLookup;
 use App\Support\ListUrl;
+use App\Support\Permissions;
 use App\Support\Status;
 use Carbon\Carbon;
 use Illuminate\Foundation\AliasLoader;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -42,5 +45,9 @@ class AppServiceProvider extends ServiceProvider
         // Las vistas escriben Status::tone(...) sin importar la clase.
         AliasLoader::getInstance()->alias('Status', Status::class);
         AliasLoader::getInstance()->alias('ListUrl', ListUrl::class);
+
+        // @can('vehicles.create') en las vistas: los permisos de App\Support\Permissions.
+        // Para cualquier otra habilidad devuelve null y decide la regla normal.
+        Gate::before(fn (User $user, string $ability) => Permissions::exists($ability) ? $user->hasPermission($ability) : null);
     }
 }

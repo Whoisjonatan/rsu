@@ -2,10 +2,12 @@
 <x-layouts.app title="Mapa de zonas"
     :subtitle="$drawn->count().' zonas con perímetro · '.$pending->count().' sin trazar'">
     <x-slot:actions>
+        @can('zones.view')
         <a href="{{ route('zones.index') }}" class="btn btn-secondary">
             <x-lucide-arrow-left class="size-4" />
             Volver
         </a>
+        @endcan
     </x-slot:actions>
 
     <div class="grid gap-4 lg:grid-cols-[1fr_18rem]" x-data="mapPicker({ mode: 'polygon', readOnly: true, references: @js($shapes) })">
@@ -53,9 +55,11 @@
                         @foreach ($pending as $zone)
                             <li class="flex items-center justify-between gap-2 px-4 py-2.5">
                                 <span class="min-w-0 truncate text-stone-700">{{ $zone->name }}</span>
+                                @can('zones.perimeter')
                                 <a href="{{ route('zones.perimeter', $zone) }}" class="shrink-0 text-[12px] font-medium text-brand-500 hover:text-brand-600">
                                     Trazar
                                 </a>
+                                @endcan
                             </li>
                         @endforeach
                     </ul>

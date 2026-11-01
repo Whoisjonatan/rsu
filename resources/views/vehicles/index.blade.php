@@ -2,10 +2,12 @@
 <x-layouts.app title="Vehículos"
     :subtitle="$summary['total'].' vehículos registrados · '.$summary['operativo'].' operativos · '.$summary['mantenimiento'].' en mantenimiento'">
     <x-slot:actions>
+        @can('vehicles.create')
         <a href="{{ route('vehicles.create') }}" class="btn btn-primary">
             <x-lucide-plus class="size-4" />
             Nuevo vehículo
         </a>
+        @endcan
     </x-slot:actions>
 
     <div x-data="{
@@ -106,6 +108,7 @@
                                 <td><x-datetime :value="$vehicle->updated_at" /></td>
                                 <td>
                                     <div class="flex justify-end gap-1">
+                                        @can('vehicles.images')
                                         <button type="button" class="icon-btn" title="Ver imágenes"
                                             aria-label="Ver imágenes de {{ $vehicle->code }}"
                                             @click="openGallery(@js([
@@ -115,15 +118,20 @@
                                             ]))">
                                             <x-lucide-eye class="size-3.5" />
                                         </button>
+                                        @endcan
+                                        @can('vehicles.edit')
                                         <a href="{{ route('vehicles.edit', $vehicle) }}" class="icon-btn" title="Editar"
                                             aria-label="Editar {{ $vehicle->code }}">
                                             <x-lucide-pencil class="size-3.5" />
                                         </a>
+                                        @endcan
+                                        @can('vehicles.delete')
                                         <button type="button" class="icon-btn icon-btn-danger" title="Eliminar"
                                             aria-label="Eliminar {{ $vehicle->code }}"
                                             @click="toDelete = @js(['id' => $vehicle->id, 'label' => "{$vehicle->code} · {$vehicle->plate}. Esta acción no se puede deshacer."])">
                                             <x-lucide-trash-2 class="size-3.5" />
                                         </button>
+                                        @endcan
                                     </div>
                                 </td>
                             </tr>

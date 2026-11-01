@@ -60,14 +60,18 @@
                 <x-card-header title="Feriados registrados"
                     description="Los feriados inactivos quedan registrados pero no afectan la programación de rutas.">
                     <div class="flex flex-wrap justify-end gap-2">
+                        @can('holidays.load')
                         <button type="button" class="btn btn-secondary btn-sm" @click="openPeru()">
                             <x-lucide-download class="size-3.5" />
                             Cargar feriados Perú
                         </button>
+                        @endcan
+                        @can('holidays.create')
                         <button type="button" class="btn btn-primary btn-sm" @click="create()">
                             <x-lucide-plus class="size-3.5" />
                             Nuevo feriado
                         </button>
+                        @endcan
                     </div>
                 </x-card-header>
 
@@ -132,7 +136,7 @@
                                     </td>
                                     <td>{{ ucfirst($holiday->date->translatedFormat('l')) }}</td>
                                     <td>
-                                        <x-row-actions :label="$holiday->date->format('d/m/Y').' · '.$holiday->description" :row="[
+                                        <x-row-actions :editable="auth()->user()->can('holidays.edit')" :deletable="auth()->user()->can('holidays.delete')" :label="$holiday->date->format('d/m/Y').' · '.$holiday->description" :row="[
                                             'id' => $holiday->id,
                                             'date' => $holiday->date->toDateString(),
                                             'description' => $holiday->description,

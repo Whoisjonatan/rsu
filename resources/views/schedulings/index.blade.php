@@ -69,23 +69,29 @@
     :subtitle="$plural($summary['generales'], 'programación general', 'programaciones generales').' · '.$plural($summary['total'], 'individual', 'individuales').' · '.$plural($summary['vigentes'], 'vigente', 'vigentes').' hoy'">
     <x-slot:actions>
         <div class="flex gap-2">
+            @can('schedulings.calendar')
             <a href="{{ route('schedulings.calendar') }}" class="btn btn-secondary">
                 <x-lucide-calendar-days class="size-4" />
                 Calendario
             </a>
+            @endcan
+            @can('schedulings.bulk')
             <a href="{{ route('schedulings.bulk') }}" class="btn btn-secondary">
                 <x-lucide-layers class="size-4" />
                 Programación masiva
             </a>
+            @endcan
+            @can('schedulings.create')
             <a href="{{ route('schedulings.create') }}" class="btn btn-primary">
                 <x-lucide-plus class="size-4" />
                 Programar
             </a>
+            @endcan
         </div>
     </x-slot:actions>
 
     <nav class="mb-5 flex gap-1 border-b border-stone-200" aria-label="Vista de la programación">
-        @foreach (['general' => 'General', 'detallada' => 'Detallada (por día)'] as $key => $label)
+        @foreach (array_filter(['general' => 'General', 'detallada' => auth()->user()->can('schedulings.by_day') ? 'Detallada (por día)' : null]) as $key => $label)
             <a href="{{ route('schedulings.index', ['tab' => $key, ...$keep]) }}" @class([
                 '-mb-px border-b-2 px-4 py-2 text-[13px] font-medium transition',
                 'border-brand-600 text-brand-700' => $key === $tab,
@@ -198,10 +204,14 @@
                                     </td>
                                     <td><span class="font-mono">{{ $row->vehicle?->plate ?? '—' }}</span></td>
                                     <td class="whitespace-nowrap">
-                                        <a href="{{ route('schedulings.index', ['tab' => 'detallada', 'general' => $row->id, 'date_from' => '', 'date_to' => '']) }}"
-                                            class="font-medium text-brand-700 hover:underline">
-                                            {{ $plural($days, 'día', 'días') }}
-                                        </a>
+                                        @can('schedulings.by_day')
+                                            <a href="{{ route('schedulings.index', ['tab' => 'detallada', 'general' => $row->id, 'date_from' => '', 'date_to' => '']) }}"
+                                                class="font-medium text-brand-700 hover:underline">
+                                                {{ $plural($days, 'día', 'días') }}
+                                            </a>
+                                        @else
+                                            <span class="font-medium text-stone-700">{{ $plural($days, 'día', 'días') }}</span>
+                                        @endcan
                                         @foreach ($dayCountLabels as $key => [$one, $many])
                                             @if ($counts[$key] ?? 0)
                                                 <span class="mt-0.5 block text-[11px] text-stone-400">{{ $plural($counts[$key], $one, $many) }}</span>
@@ -213,27 +223,35 @@
                                     </td>
                                     <td>
                                         <div class="flex justify-end gap-1">
-                                            <a href="{{ route('schedulings.index', ['tab' => 'detallada', 'general' => $row->id, 'date_from' => '', 'date_to' => '']) }}"
-                                                class="icon-btn" title="Ver programaciones por día" aria-label="Ver los días de {{ $row->code }}">
-                                                <x-lucide-list class="size-3.5" />
-                                            </a>
+                                            @can('schedulings.by_day')
+                                                <a href="{{ route('schedulings.index', ['tab' => 'detallada', 'general' => $row->id, 'date_from' => '', 'date_to' => '']) }}"
+                                                    class="icon-btn" title="Ver programaciones por día" aria-label="Ver los días de {{ $row->code }}">
+                                                    <x-lucide-list class="size-3.5" />
+                                                </a>
+                                            @endcan
                                             @unless ($row->finishBlocker())
+                                                @can('schedulings.finish')
                                                 <button type="button" class="icon-btn" title="Finalizar"
                                                     aria-label="Finalizar {{ $row->code }}"
                                                     @click="toFinish = @js(['id' => $row->id, 'label' => $row->code, 'general' => true, 'early' => $row->end_date->isAfter(today())])">
                                                     <x-lucide-flag class="size-3.5" />
                                                 </button>
+                                                @endcan
                                             @endunless
+                                            @can('schedulings.details')
                                             <button type="button" class="icon-btn" title="Ver detalles"
                                                 aria-label="Ver detalles de {{ $row->code }}"
                                                 @click="toGeneral = @js($row->details()); detailPage = 1">
                                                 <x-lucide-eye class="size-3.5" />
                                             </button>
+                                            @endcan
+                                            @can('schedulings.delete')
                                             <button type="button" class="icon-btn icon-btn-danger" title="Eliminar"
                                                 aria-label="Eliminar {{ $row->code }}"
                                                 @click="toDelete = @js(['id' => $row->id, 'label' => $row->code.' · '.$plural($days, 'día', 'días'), 'general' => true])">
                                                 <x-lucide-trash-2 class="size-3.5" />
                                             </button>
+                                            @endcan
                                         </div>
                                     </td>
                                 </tr>
@@ -288,28 +306,36 @@
                                         <div class="flex justify-end gap-1">
                                             {{-- Una finalizada es historia: ya no se edita. --}}
                                             @unless ($row->isFinished())
+                                                @can('schedulings.edit')
                                                 <a href="{{ route('schedulings.edit', $row) }}" class="icon-btn" title="Modificar este día"
                                                     aria-label="Modificar {{ $row->code }}">
                                                     <x-lucide-pencil class="size-3.5" />
                                                 </a>
+                                                @endcan
                                             @endunless
                                             @unless ($row->finishBlocker())
+                                                @can('schedulings.finish')
                                                 <button type="button" class="icon-btn" title="Finalizar"
                                                     aria-label="Finalizar {{ $row->code }}"
                                                     @click="toFinish = @js(['id' => $row->id, 'label' => $row->code, 'general' => false, 'early' => $row->end_date->isAfter(today())])">
                                                     <x-lucide-flag class="size-3.5" />
                                                 </button>
+                                                @endcan
                                             @endunless
+                                            @can('schedulings.details')
                                             <button type="button" class="icon-btn" title="Ver detalles"
                                                 aria-label="Ver detalles de {{ $row->code }}"
                                                 @click="toDetail = @js($row->details()); detailPage = 1">
                                                 <x-lucide-eye class="size-3.5" />
                                             </button>
+                                            @endcan
+                                            @can('schedulings.delete')
                                             <button type="button" class="icon-btn icon-btn-danger" title="Eliminar"
                                                 aria-label="Eliminar {{ $row->code }}"
                                                 @click="toDelete = @js(['id' => $row->id, 'label' => $row->code.' · '.$row->dateLabel(), 'general' => false])">
                                                 <x-lucide-trash-2 class="size-3.5" />
                                             </button>
+                                            @endcan
                                         </div>
                                     </td>
                                 </tr>

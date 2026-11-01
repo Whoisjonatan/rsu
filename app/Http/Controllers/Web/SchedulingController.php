@@ -39,7 +39,8 @@ class SchedulingController extends Controller
     {
         Scheduling::closeFinished();
 
-        $tab = $request->query('tab') === 'detallada' ? 'detallada' : 'general';
+        // La vista por día exige su permiso (schedulings.by_day); sin él, la general.
+        $tab = $request->query('tab') === 'detallada' && $request->user()->hasPermission('schedulings.by_day') ? 'detallada' : 'general';
 
         // El rango acota a las vigentes en algún día entre "desde" y "hasta".
         // Llega de hoy a un año (lo que está por delante); vaciarlo enseña

@@ -34,6 +34,8 @@ class OperationSeeder extends Seeder
         foreach (self::USER_TYPES as [$name, $slug, $description, $isSystem]) {
             UserType::updateOrCreate(['slug' => $slug], [
                 'name' => $name,
+                // Administrador y Supervisor entran al panel; el resto es personal operativo.
+                'kind' => in_array($slug, [UserType::ADMIN, UserType::SUPERVISOR], true) ? UserType::KIND_SYSTEM : UserType::KIND_STAFF,
                 'description' => $description,
                 'is_system' => $isSystem,
             ]);

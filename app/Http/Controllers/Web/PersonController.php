@@ -23,6 +23,8 @@ class PersonController extends Controller
         $filters = $request->only(['q', 'usertype_id', 'contract_type', 'state']);
 
         $people = User::query()
+            // Los usuarios del sistema (administrador, supervisor) van en Gestión de usuarios.
+            ->staff()
             ->with(['usertype', 'zone'])
             ->filter(['search' => $filters['q'] ?? null, ...$filters])
             ->orderBy('lastname')
@@ -33,7 +35,7 @@ class PersonController extends Controller
         return view('people.index', [
             'people' => $people,
             'summary' => User::staffSummary(),
-            'types' => UserType::orderBy('name')->get(['id', 'name']),
+            'types' => UserType::staffFunctions()->orderBy('name')->get(['id', 'name']),
             'filters' => $filters,
         ]);
     }
@@ -59,15 +61,27 @@ class PersonController extends Controller
     }
 
     /** W08 Ficha de personal, con las pestañas de contratos (W09) y vacaciones (W10). */
-    public function edit(Request $request, User $person, DniLookup $lookup): View
+    public function edit(Request $request, User $person, DniLookup $lookup): View|RedirectResponse
     {
-        $tab = in_array($request->query('tab'), ['contratos', 'vacaciones'], true) ? $request->query('tab') : 'datos';
+        // Un usuario del sistema (administrador, supervisor) se edita en Gestión de usuarios.
+        if ($person->isSystemUser()) {
+            return redirect()->route('users.edit', $person);
+        }
+
+        // Solo las pestañas que el usuario puede ver: datos (people.edit), contratos y vacaciones (*.view).
+        $allowedTabs = array_keys(array_filter([
+            'datos' => $request->user()->hasPermission('people.edit'),
+            'contratos' => $request->user()->hasPermission('contracts.view'),
+            'vacaciones' => $request->user()->hasPermission('vacations.view'),
+        ]));
+        $tab = in_array($request->query('tab'), $allowedTabs, true) ? $request->query('tab') : $allowedTabs[0];
         $year = $request->integer('year', (int) now()->year);
         Vacation::closeFinished($person->id);
 
         return view('people.form', [
             'person' => $person->load('usertype'),
             'tab' => $tab,
+            'allowedTabs' => $allowedTabs,
             'contracts' => $person->contracts()->orderByDesc('start_date')->get(),
             'vacations' => $person->vacations()->orderByDesc('start_date')->get(),
             'vacationSummary' => Vacation::summaryFor($person, $year),
@@ -84,6 +98,8 @@ class PersonController extends Controller
 
     public function destroy(Request $request, User $person): RedirectResponse
     {
+        abort_if($person->isSystemUser(), 404);
+
         if ($blocker = $person->deletionBlocker($request->user())) {
             return back()->with('error', $blocker);
         }
@@ -122,7 +138,7 @@ class PersonController extends Controller
     private function formData(DniLookup $lookup): array
     {
         return [
-            'types' => UserType::orderBy('name')->get(['id', 'name', 'slug']),
+            'types' => UserType::staffFunctions()->orderBy('name')->get(['id', 'name', 'slug']),
             'dniLookup' => $lookup->isEnabled() ? $lookup->provider() : null,
         ];
     }

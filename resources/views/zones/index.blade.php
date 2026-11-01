@@ -17,14 +17,18 @@
             <x-card-header title="Zonas de recolección"
                 description="Cada zona pertenece a un distrito y agrupa las rutas y programaciones. El área se calcula al trazar el perímetro.">
                 <div class="flex gap-2">
+                    @can('zones.map')
                     <a href="{{ route('zones.map') }}" class="btn btn-secondary btn-sm">
                         <x-lucide-map class="size-3.5" />
                         Mapa
                     </a>
+                    @endcan
+                    @can('zones.create')
                     <button type="button" class="btn btn-primary btn-sm" @click="create()">
                         <x-lucide-plus class="size-3.5" />
                         Nueva zona
                     </button>
+                    @endcan
                 </div>
             </x-card-header>
 
@@ -85,7 +89,7 @@
                                     <x-badge :tone="Status::tone('zone', $zone->status)">{{ Status::label('zone', $zone->status) }}</x-badge>
                                 </td>
                                 <td>
-                                    <x-row-actions :label="$zone->name" :row="[
+                                    <x-row-actions :editable="auth()->user()->can('zones.edit')" :deletable="auth()->user()->can('zones.delete')" :label="$zone->name" :row="[
                                         'id' => $zone->id,
                                         'name' => $zone->name,
                                         'department_id' => (string) ($zone->district?->department_id ?? ''),
@@ -95,10 +99,12 @@
                                         'status' => $zone->status,
                                         'description' => $zone->description,
                                     ]">
+                                        @can('zones.perimeter')
                                         <a href="{{ route('zones.perimeter', $zone) }}" class="icon-btn" title="Dibujar perímetro"
                                             aria-label="Dibujar el perímetro de {{ $zone->name }}">
                                             <x-lucide-map-pin class="size-3.5" />
                                         </a>
+                                        @endcan
                                     </x-row-actions>
                                 </td>
                             </tr>

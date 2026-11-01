@@ -8,8 +8,10 @@ const BADGE_TONES = {
 };
 
 /**
- * Dashboard: los modales de cada card.
+ * Dashboard: el filtro de los cuatro indicadores y los modales de cada card.
  *
+ * - Pulsar un indicador deja abajo solo sus programaciones; "Personal
+ *   faltante" muestra las que tienen a alguien sin marcar o con falta.
  * - "Ver detalles" enseña la asistencia de la tripulación y deja cambiar a
  *   quien falta por personal disponible.
  * - "Modificar programación" es el editor de turno, vehículo y personal.
@@ -25,7 +27,39 @@ export default (config) => ({
     reasons: config.reasons,
     updateUrl: config.updateUrl,
 
+    // Indicador elegido arriba: total, completa, incompleta o faltantes. Va en
+    // la URL (?ver=) para que sobreviva a la recarga tras guardar un cambio.
+    counts: config.counts ?? {},
+    filter: 'total',
+
+    // El día mostrado es hoy: al cambiar personal solo se ofrece a quien ya
+    // marcó entrada en el turno (en un día futuro nadie ha podido marcar).
+    isToday: Boolean(config.isToday),
+
+    // Cambiar personal o modificar la programación exige el permiso schedulings.edit.
+    canEdit: Boolean(config.canEdit),
+
     detail: null,
+
+    init() {
+        const fromUrl = new URLSearchParams(window.location.search).get('ver');
+        if (fromUrl && fromUrl in this.counts) {
+            this.filter = fromUrl;
+        }
+    },
+
+    setFilter(key) {
+        // Volver a pulsar el indicador activo quita el filtro.
+        this.filter = this.filter === key ? 'total' : key;
+
+        const url = new URL(window.location.href);
+        if (this.filter === 'total') {
+            url.searchParams.delete('ver');
+        } else {
+            url.searchParams.set('ver', this.filter);
+        }
+        window.history.replaceState(null, '', url);
+    },
     // Reemplazo de quien falta, dentro de "Ver detalles".
     replacing: null,
 
@@ -78,8 +112,14 @@ export default (config) => ({
         return Boolean(this.reasons[section]?.find((reason) => reason.name === name)?.requires_description);
     },
 
-    markLabel(person) {
-        return person.mark ? ` · ${person.mark}` : ' · sin marcar';
+    /** La marcación de la persona en ese turno (la asistencia es por turno). */
+    markIn(person, scheduleId) {
+        return person.marks?.[scheduleId] ?? null;
+    },
+
+    markLabel(person, scheduleId) {
+        const mark = this.markIn(person, scheduleId);
+        return mark ? ` · ${mark}` : ' · sin marcar en este turno';
     },
 
     /** Los mismos tonos que x-badge. */
@@ -96,7 +136,7 @@ export default (config) => ({
     // --- Reemplazo de personal faltante -------------------------------------
 
     canReplace(member) {
-        return this.detail?.editable && this.detail.status === 'incompleta' && !member.present && member.replaceable;
+        return this.canEdit && this.detail?.editable && this.detail.status === 'incompleta' && !member.present && member.replaceable;
     },
 
     startReplace(member) {
@@ -111,17 +151,20 @@ export default (config) => ({
         };
     },
 
-    /** Del mismo rol, libres en el turno y fuera de la tripulación; los que ya marcaron, primero. */
+    /** Del mismo rol, libres en el turno y fuera de la tripulación; los que ya marcaron en el turno, primero. */
     get replaceOptions() {
         if (!this.detail || !this.replacing) return [];
 
         const crew = this.detail.editor.crew.map((member) => member.id);
+        const shift = this.detail.editor.schedule_id;
 
+        // Solo quien marcó entrada en este turno: al faltante se le reemplaza con alguien que ya está trabajando.
         return this.options.staff
             .filter((person) => person.role === this.replacing.role
+                && this.markIn(person, shift)
                 && !crew.includes(person.id)
-                && !this.isBusy('busy_staff', this.detail.editor.schedule_id, person.id, this.detail))
-            .sort((a, b) => Number(!a.mark) - Number(!b.mark));
+                && !this.isBusy('busy_staff', shift, person.id, this.detail))
+            .sort((a, b) => a.full_name.localeCompare(b.full_name));
     },
 
     async submitReplace() {
@@ -138,6 +181,7 @@ export default (config) => ({
             new_id: Number(row.new_id),
             reason: row.reason,
             description: row.description.trim() || null,
+            present_only: true,
         }]);
     },
 
@@ -160,10 +204,13 @@ export default (config) => ({
             .filter(([id, value]) => Number(id) !== member.id && value !== '')
             .map(([, value]) => Number(value));
 
-        return this.options.staff.filter((person) => person.role === member.role
-            && !crew.includes(person.id)
-            && !chosen.includes(person.id)
-            && !this.isBusy('busy_staff', this.editor.schedule_id, person.id, this.editing));
+        return this.options.staff
+            .filter((person) => person.role === member.role
+                && (!this.isToday || this.markIn(person, this.editor.schedule_id))
+                && !crew.includes(person.id)
+                && !chosen.includes(person.id)
+                && !this.isBusy('busy_staff', this.editor.schedule_id, person.id, this.editing))
+            .sort((a, b) => Number(!this.markIn(a, this.editor.schedule_id)) - Number(!this.markIn(b, this.editor.schedule_id)));
     },
 
     get changed() {
@@ -200,7 +247,7 @@ export default (config) => ({
             if (section === 'personal') {
                 Object.entries(this.editor.people)
                     .filter(([, value]) => value !== '')
-                    .forEach(([oldId, newId]) => changes.push({ type: 'personal', old_id: Number(oldId), new_id: Number(newId), ...common }));
+                    .forEach(([oldId, newId]) => changes.push({ type: 'personal', old_id: Number(oldId), new_id: Number(newId), present_only: this.isToday, ...common }));
             }
         }
 

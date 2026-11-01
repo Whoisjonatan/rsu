@@ -28,11 +28,13 @@
                         <option value="{{ $zone->id }}" @selected($zoneFilter == $zone->id)>{{ $zone->name }}</option>
                     @endforeach
                 </select>
+                @can('zones.edit')
                 <button type="button" class="btn btn-primary btn-sm"
                     @click="create({ zone_ids: @js($zones->firstWhere('id', $zoneFilter)?->isActive() ? [(string) $zoneFilter] : []) })">
                     <x-lucide-plus class="size-3.5" />
                     Nueva ruta
                 </button>
+                @endcan
             </form>
 
             <div class="overflow-x-auto">
@@ -69,7 +71,7 @@
                                     <x-badge :tone="Status::tone('active', $route->status)">{{ Status::label('active', $route->status) }}</x-badge>
                                 </td>
                                 <td>
-                                    <x-row-actions :label="$route->name" :row="[
+                                    <x-row-actions :editable="auth()->user()->can('zones.edit')" :deletable="auth()->user()->can('zones.edit')" :label="$route->name" :row="[
                                         ...$route->only('id', 'name', 'description', 'status', 'latitude_start', 'longitude_start', 'latitude_end', 'longitude_end'),
                                         'zone_ids' => $route->zones->pluck('id')->map(fn ($id) => (string) $id)->all(),
                                     ]" />

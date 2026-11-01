@@ -24,10 +24,12 @@
 
 <x-layouts.app title="Asistencias" subtitle="Consulta por fecha o por persona en un rango de fechas">
     <x-slot:actions>
+        @can('attendances.mark')
         <a href="{{ route('attendances.terminal') }}" target="_blank" rel="noreferrer" class="btn btn-secondary">
             <x-lucide-external-link class="size-4" />
             Abrir terminal
         </a>
+        @endcan
     </x-slot:actions>
 
     <nav class="mb-5 flex gap-1 border-b border-stone-200" aria-label="Modo de consulta">
@@ -114,7 +116,7 @@
                     description="Solo aparece el personal con contrato vigente ese día; los de vacaciones se omiten." />
             @else
                 <x-card-header :title="$report ? 'Marcaciones de '.$report['person']['full_name'] : 'Marcaciones'"
-                    description="Los días hábiles ya transcurridos sin marcación se muestran como ausentes." />
+                    description="Una fila por turno marcado. Los días hábiles ya transcurridos sin marcación se muestran como ausentes." />
             @endif
 
             <div class="overflow-x-auto">
@@ -123,7 +125,8 @@
                         <tr>
                             <th>{{ $byDate ? 'Apellidos y nombres' : 'Fecha' }}</th>
                             <th>Turno</th>
-                            <th>Hora de marcación</th>
+                            <th>Entrada</th>
+                            <th>Salida</th>
                             <th>Zona asignada</th>
                             <th>Estado</th>
                         </tr>
@@ -147,6 +150,18 @@
                                         <span class="text-stone-400">—</span>
                                     @endif
                                 </td>
+                                <td>
+                                    @if ($row['check_out'])
+                                        <span class="font-mono tabular-nums">{{ $row['check_out'] }}</span>
+                                    @else
+                                        <span class="text-stone-400">—</span>
+                                    @endif
+                                    @if ($row['exit_state'] === 'anticipada')
+                                        <x-badge tone="amber" class="ml-1" title="El turno termina a las {{ $row['shift_end'] }}">Anticipada</x-badge>
+                                    @elseif ($row['exit_state'] === 'sin_salida')
+                                        <x-badge tone="red" class="ml-1">Sin salida</x-badge>
+                                    @endif
+                                </td>
                                 <td>{{ $row['zone'] ?? '—' }}</td>
                                 <td>
                                     <x-badge :tone="Status::tone('attendance', $row['status'])">
@@ -155,7 +170,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <x-empty-row colspan="5" :message="$emptyReason()" />
+                            <x-empty-row colspan="6" :message="$emptyReason()" />
                         @endforelse
                     </tbody>
                 </table>

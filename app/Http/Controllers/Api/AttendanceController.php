@@ -27,27 +27,36 @@ class AttendanceController extends Controller
         $data = $request->validate([
             'dni' => ['required', 'digits:8'],
             'password' => ['required', 'string'],
+            // Entrada o salida del turno. Sin indicarlo es una entrada, como antes.
+            'type' => ['sometimes', 'in:entrada,salida'],
         ], [
             'dni.digits' => 'El DNI debe tener 8 dígitos.',
         ]);
 
-        $result = $this->attendances->mark($data['dni'], $data['password']);
+        $result = $this->attendances->mark($data['dni'], $data['password'], $data['type'] ?? 'entrada');
 
         return match ($result['status']) {
             'out_of_hours' => response()->json([
+                'type' => $result['kind'],
                 'message' => $result['message'],
                 'windows' => $result['windows'],
             ], 422),
+            'rejected' => response()->json([
+                'type' => $result['kind'],
+                'message' => $result['message'],
+            ], 422),
             'already_marked' => response()->json([
+                'type' => $result['kind'],
                 'already_marked' => true,
                 'message' => $result['message'],
                 'attendance' => $result['attendance'],
             ]),
             default => response()->json([
+                'type' => $result['kind'],
                 'already_marked' => false,
                 'message' => $result['message'],
                 'attendance' => $result['attendance'],
-            ], 201),
+            ], $result['status'] === 'created' ? 201 : 200),
         };
     }
 

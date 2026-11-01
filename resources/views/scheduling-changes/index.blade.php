@@ -8,10 +8,12 @@
 <x-layouts.app title="Cambios" subtitle="Gestión de cambios › Historial de los cambios de turno, vehículo y personal hechos a las programaciones">
     <x-slot:actions>
         {{-- El modal vive abajo (partials.bulk); el botón está fuera de su x-data y lo abre con un evento. --}}
+        @can('changes.bulk')
         <button type="button" class="btn btn-primary" x-data @click="$dispatch('open-bulk-change')">
             <x-lucide-layers class="size-4" />
             Nuevo cambio masivo
         </button>
+        @endcan
     </x-slot:actions>
 
     <div x-data="{
@@ -96,16 +98,20 @@
                                 <td class="text-stone-600">{{ $change->user?->full_name ?? '—' }}</td>
                                 <td>
                                     <div class="flex justify-end gap-1">
+                                        @can('changes.details')
                                         <button type="button" class="icon-btn icon-btn-success" title="Ver detalle"
                                             aria-label="Ver detalle del cambio de {{ $change->typeLabel() }} de {{ $scheduling?->code }}"
                                             @click="detail = @js($details[$change->id])">
                                             <x-lucide-eye class="size-3.5" />
                                         </button>
+                                        @endcan
+                                        @can('changes.delete')
                                         <button type="button" class="icon-btn icon-btn-danger" title="Eliminar"
                                             aria-label="Eliminar cambio de {{ $change->typeLabel() }} de {{ $scheduling?->code }}"
-                                            @click="toDelete = @js(['id' => $change->id, 'label' => $change->typeLabel().' · '.$scheduling?->code.' · '.$change->created_at->format('d/m/Y H:i')])">
+                                            @click="toDelete = @js(['id' => $change->id, 'label' => $change->typeLabel().' · '.$scheduling?->code.' · '.$change->created_at->format('d/m/Y H:i'), 'old' => $change->old_value, 'new' => $change->new_value])">
                                             <x-lucide-trash-2 class="size-3.5" />
                                         </button>
+                                        @endcan
                                     </div>
                                 </td>
                             </tr>
@@ -120,7 +126,12 @@
         </x-card>
 
         <x-confirm-delete title="Eliminar cambio">
-            Se quita del historial, pero no se deshace: la programación conserva el turno, vehículo o personal que tiene ahora.
+            Se elimina del historial y <strong>se deshace</strong>: la programación vuelve a tener
+            <strong x-text="toDelete?.old ?? 'lo anterior'"></strong>
+            en lugar de <strong x-text="toDelete?.new ?? 'lo actual'"></strong>.
+            <span class="mt-2 block text-[12px] text-stone-500">
+                Si después hubo otro cambio sobre el mismo valor, elimina primero ese.
+            </span>
         </x-confirm-delete>
 
         @include('scheduling-changes.partials.detail')

@@ -16,6 +16,19 @@
         ['/marcacion', 'Terminal de marcación', 'Fichaje del personal con DNI y clave.', 'fingerprint', true],
     ];
 
+    // Solo los accesos que permiten los permisos del usuario.
+    $shortcutPermissions = [
+        '/programacion/nueva' => ['schedulings.create'],
+        '/programacion/calendario' => ['schedulings.calendar'],
+        '/vehiculos/nuevo' => ['vehicles.create'],
+        '/personal/nuevo' => ['people.create'],
+        '/asistencias' => ['attendances.view'],
+        '/zonas' => ['zones.view'],
+        '/turnos' => ['schedules.view'],
+        '/marcacion' => ['attendances.mark'],
+    ];
+    $shortcuts = array_values(array_filter($shortcuts, fn ($shortcut) => $user->hasAnyPermission($shortcutPermissions[$shortcut[0]] ?? [])));
+
     // El orden en que se alimenta el sistema, para quien entra por primera vez.
     $workflow = [
         ['Configura los catálogos', 'Colores, marcas, modelos, tipos de vehículo y funciones del personal.'],

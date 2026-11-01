@@ -15,7 +15,8 @@ use Illuminate\View\View;
  * W01 Inicio de sesión del panel web, con sesión por cookie.
  *
  * El API conserva su propio login por token (Api\AuthController) para la app
- * móvil; las reglas de quién puede entrar son las mismas en los dos.
+ * móvil. Al panel solo entran los usuarios del sistema (Administrador y
+ * Supervisor); el API no tiene esa restricción.
  */
 class AuthController extends Controller
 {
@@ -39,6 +40,14 @@ class AuthController extends Controller
 
         if ($user->status !== 'activo') {
             throw ValidationException::withMessages(['username' => 'El usuario está inactivo']);
+        }
+
+        // Al panel solo entran los usuarios del sistema (Gestión de usuarios).
+        // El personal operativo usa su clave para marcar asistencia en el terminal.
+        if (! $user->isSystemUser()) {
+            throw ValidationException::withMessages([
+                'username' => 'Tu usuario no tiene acceso al panel. Tu clave sirve para marcar asistencia en el terminal.',
+            ]);
         }
 
         // "Mantener sesión activa" deja la cookie de recuerdo; sin marcarlo,

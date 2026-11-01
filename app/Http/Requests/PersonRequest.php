@@ -36,7 +36,8 @@ class PersonRequest extends FormRequest
             'phone' => ['nullable', 'string', 'max:20'],
             'birthdate' => ['nullable', 'date', 'before:today'],
             'address' => ['nullable', 'string', 'max:255'],
-            'usertype_id' => ['required', 'exists:usertypes,id'],
+            // Solo funciones del personal: los usuarios del sistema se registran en Gestión de usuarios.
+            'usertype_id' => ['required', Rule::exists('usertypes', 'id')->whereNot('kind', UserType::KIND_SYSTEM)],
             'zone_id' => ['nullable', 'exists:zones,id'],
             'status' => ['required', Rule::in(['activo', 'inactivo'])],
             'license' => ['nullable', 'string', 'max:20'],

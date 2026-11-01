@@ -2,10 +2,12 @@
 <x-layouts.app title="Grupos de personal"
     subtitle="Plantillas con turno, zona, vehículo, días y tripulación: al programar solo falta el rango de fechas">
     <x-slot:actions>
+        @can('staffgroups.create')
         <a href="{{ route('staffgroups.create') }}" class="btn btn-primary">
             <x-lucide-plus class="size-4" />
             Nuevo grupo
         </a>
+        @endcan
     </x-slot:actions>
 
     <div x-data="{
@@ -66,20 +68,26 @@
                                 <td>
                                     <div class="flex justify-end gap-1">
                                         @if ($group->status === 'activo')
+                                            @can('staffgroups.schedule')
                                             <a href="{{ route('schedulings.create', ['grupo' => $group->id]) }}" class="icon-btn"
                                                 title="Programar con este grupo" aria-label="Programar con {{ $group->name }}">
                                                 <x-lucide-calendar-plus class="size-3.5" />
                                             </a>
+                                            @endcan
                                         @endif
+                                        @can('staffgroups.edit')
                                         <a href="{{ route('staffgroups.edit', $group) }}" class="icon-btn" title="Editar"
                                             aria-label="Editar {{ $group->name }}">
                                             <x-lucide-pencil class="size-3.5" />
                                         </a>
+                                        @endcan
+                                        @can('staffgroups.delete')
                                         <button type="button" class="icon-btn icon-btn-danger" title="Eliminar"
                                             aria-label="Eliminar {{ $group->name }}"
                                             @click="toDelete = @js(['id' => $group->id, 'label' => $group->name])">
                                             <x-lucide-trash-2 class="size-3.5" />
                                         </button>
+                                        @endcan
                                     </div>
                                 </td>
                             </tr>

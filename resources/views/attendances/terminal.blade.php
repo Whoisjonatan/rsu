@@ -5,7 +5,8 @@
 @php
     $result = session('marking');
     $blocked = ($result['status'] ?? null) === 'out_of_hours' ? $result['windows'] : null;
-    $error = $errors->first('dni') ?: $errors->first('password');
+    $rejected = ($result['status'] ?? null) === 'rejected' ? $result['message'] : null;
+    $error = $errors->first('dni') ?: $errors->first('password') ?: $errors->first('type');
 @endphp
 
 <x-layouts.guest title="Marcación de asistencia">
@@ -32,6 +33,8 @@
                 class="rounded-xl border border-stone-200 bg-white p-6 shadow-sm"
                 x-data="{ dni: @js(old('dni', '')), password: '', sending: false }" @submit="sending = true">
                 @csrf
+                {{-- Lo fija el botón pulsado. Va en un campo aparte porque un botón deshabilitado al enviar no manda su valor. --}}
+                <input type="hidden" name="type" value="entrada" x-ref="type">
 
                 <div class="space-y-4">
                     <div>
@@ -54,15 +57,28 @@
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary mt-6 h-12 w-full text-sm"
-                    :disabled="dni.length !== 8 || password === '' || sending">
-                    <x-lucide-loader-circle class="size-4 animate-spin" x-show="sending" x-cloak />
-                    Registrar asistencia
-                </button>
+                <div class="mt-6 grid gap-3 sm:grid-cols-2">
+                    <button type="submit" class="btn btn-primary h-12 w-full justify-center text-sm"
+                        @click="$refs.type.value = 'entrada'" :disabled="dni.length !== 8 || password === '' || sending">
+                        <x-lucide-log-in class="size-4" />
+                        Marcar entrada
+                    </button>
+                    <button type="submit" class="btn btn-secondary h-12 w-full justify-center text-sm"
+                        @click="$refs.type.value = 'salida'" :disabled="dni.length !== 8 || password === '' || sending">
+                        <x-lucide-log-out class="size-4" />
+                        Marcar salida
+                    </button>
+                </div>
+                <p x-show="sending" x-cloak class="mt-2 flex items-center justify-center gap-1.5 text-[12px] text-stone-500">
+                    <x-lucide-loader-circle class="size-3.5 animate-spin" />
+                    Registrando…
+                </p>
 
-                @if ($result && $result['status'] !== 'out_of_hours')
+                @if ($result && in_array($result['status'], ['created', 'exit', 'already_marked'], true))
                     @php
                         $already = $result['status'] === 'already_marked';
+                        $row = $result['attendance'];
+                        $isExit = ($result['kind'] ?? 'entrada') === 'salida';
                     @endphp
                     {{-- El acuse se borra solo, para que el siguiente trabajador no lo vea. --}}
                     <div x-data="{ show: true }" x-init="setTimeout(() => show = false, 12000)" x-show="show" x-transition.opacity
@@ -77,13 +93,31 @@
                                 {{ $result['message'] }}
                             </p>
                             <p class="mt-0.5 text-[12px] text-stone-600">
-                                Turno {{ $result['attendance']['schedule'] }} ·
-                                {{ $result['attendance']['status'] === 'tarde' ? 'registrada como tardanza' : 'a tiempo' }}
-                                @if ($result['attendance']['zone'])
-                                    · zona {{ $result['attendance']['zone'] }}
+                                Turno {{ $row['schedule'] }}
+                                @if ($isExit)
+                                    · entrada {{ $row['check_in'] }}
+                                    @if ($row['check_out'])
+                                        · salida {{ $row['check_out'] }}
+                                    @endif
+                                    @if ($row['exit_state'] === 'anticipada')
+                                        · el turno termina a las {{ $row['shift_end'] }}
+                                    @endif
+                                @else
+                                    · {{ $row['status'] === 'tarde' ? 'registrada como tardanza' : 'a tiempo' }}
+                                    @if ($row['shift_end'])
+                                        · recuerda marcar tu salida al terminar ({{ $row['shift_end'] }})
+                                    @endif
                                 @endif
                             </p>
                         </div>
+                    </div>
+                @endif
+
+                @if ($rejected)
+                    <div x-data="{ show: true }" x-init="setTimeout(() => show = false, 12000)" x-show="show" x-transition.opacity
+                        class="mt-5 flex items-start gap-3 rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-3">
+                        <x-lucide-triangle-alert class="mt-0.5 size-4 shrink-0 text-amber-700" />
+                        <p class="text-[13px] font-semibold text-amber-900">{{ $rejected }}</p>
                     </div>
                 @endif
 
@@ -91,10 +125,14 @@
                     <div class="mt-5 rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-3">
                         <p class="flex items-center gap-2 text-[13px] font-bold text-amber-900">
                             <x-lucide-triangle-alert class="size-4 shrink-0" />
-                            Marcación fuera de horario
+                            {{ $result['message'] }}
                         </p>
                         <p class="mt-1.5 text-[12px] text-amber-800">
-                            Comuníquese con el supervisor de zona. Los turnos admiten marcación en estos horarios:
+                            @if ($result['own'] ?? false)
+                                Solo puedes marcar entrada en el turno en que estás programado hoy:
+                            @else
+                                Comuníquese con el supervisor de zona. Los turnos admiten marcación de entrada en estos horarios:
+                            @endif
                         </p>
                         <ul class="mt-2 space-y-1">
                             @foreach ($blocked as $window)
@@ -114,18 +152,32 @@
                         <x-lucide-clock class="size-3.5" />
                         Horarios de marcación
                     </p>
-                    <ul class="mt-2.5 space-y-1.5">
-                        @foreach ($windows as $window)
-                            <li class="flex items-center justify-between text-[12px] text-stone-600">
-                                <span class="font-medium text-stone-800">{{ $window['name'] }}</span>
-                                <span class="font-mono tabular-nums">{{ $window['opens'] }} – {{ $window['closes'] }}</span>
-                            </li>
-                        @endforeach
-                    </ul>
+                    <table class="mt-2.5 w-full text-[12px] text-stone-600">
+                        <thead>
+                            <tr class="text-left text-[11px] text-stone-400">
+                                <th class="pb-1 font-medium">Turno</th>
+                                <th class="pb-1 font-medium">Entrada</th>
+                                <th class="pb-1 text-right font-medium">Salida</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($windows as $window)
+                                <tr>
+                                    <td class="py-0.5 font-medium text-stone-800">{{ $window['name'] }}</td>
+                                    <td class="py-0.5 font-mono tabular-nums">{{ $window['opens'] }} – {{ $window['closes'] }}</td>
+                                    <td class="py-0.5 text-right font-mono tabular-nums" title="La salida se acepta desde la entrada; antes de esta hora queda como anticipada">
+                                        {{ $window['ends'] }} <span class="text-stone-400">(hasta {{ $window['exit_closes'] }})</span>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
                 </div>
             @endunless
 
-            <p class="mt-4 text-center text-[11px] text-stone-400">La marcación habilita el inicio del recorrido del día.</p>
+            <p class="mt-4 text-center text-[11px] text-stone-400">
+                Marca la entrada y la salida de cada turno. La entrada habilita el inicio del recorrido.
+            </p>
         </div>
     </div>
 </x-layouts.guest>

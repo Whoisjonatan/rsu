@@ -20,11 +20,16 @@ class VehicleCatalogController extends Controller
 {
     private const TABS = ['colores', 'marcas', 'modelos', 'tipos'];
 
+    /** Prefijo del permiso de cada pestaña (App\Support\Permissions). */
+    public const PERMISSIONS = ['colores' => 'colors', 'marcas' => 'brands', 'modelos' => 'models', 'tipos' => 'types'];
+
     private const PER_PAGE = 10;
 
     public function index(Request $request): View
     {
-        $tab = in_array($request->query('tab'), self::TABS, true) ? $request->query('tab') : 'colores';
+        // Solo las pestañas que el usuario puede ver (permisos colors/brands/models/types.view).
+        $allowed = array_values(array_filter(self::TABS, fn (string $tab) => $request->user()->hasPermission(self::PERMISSIONS[$tab].'.view')));
+        $tab = in_array($request->query('tab'), $allowed, true) ? $request->query('tab') : $allowed[0];
         $search = trim((string) $request->query('q'));
 
         // La colación de MySQL ya ignora tildes y mayúsculas: "camion"
@@ -54,6 +59,8 @@ class VehicleCatalogController extends Controller
 
         return view('vehicles.catalogs', [
             'tab' => $tab,
+            'allowedTabs' => $allowed,
+            'perm' => self::PERMISSIONS[$tab],
             'search' => $search,
             'rows' => $rows->orderBy('name')->paginate(self::PER_PAGE)->withQueryString(),
             'counts' => [

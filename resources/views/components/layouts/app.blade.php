@@ -36,7 +36,38 @@
             ['/cambios', 'Cambios', 'git-compare-arrows'],
             ['/motivos', 'Motivos', 'message-square-text'],
         ]],
+        ['Gestión de usuarios', [
+            ['/usuarios', 'Lista de usuarios', 'user-cog'],
+            ['/usuarios/tipos', 'Tipos de usuario', 'shield-user'],
+        ]],
     ];
+
+    /*
+     * Cada opción se ve solo con su permiso (App\Support\Permissions::menu());
+     * una sección sin opciones desaparece. Quien solo ve el mapa de zonas
+     * entra directo al mapa.
+     */
+    $authUser = auth()->user();
+    $menuPermissions = \App\Support\Permissions::menu();
+    $navGroups = collect($navGroups)
+        ->map(function ($group) use ($authUser, $menuPermissions) {
+            $group[1] = collect($group[1])
+                ->filter(fn ($item) => ! isset($menuPermissions[$item[0]]) || $authUser?->hasAnyPermission($menuPermissions[$item[0]]))
+                ->map(function ($item) use ($authUser) {
+                    if ($item[0] === '/zonas' && ! $authUser?->hasPermission('zones.view')) {
+                        $item[0] = '/zonas/mapa';
+                    }
+
+                    return $item;
+                })
+                ->values()
+                ->all();
+
+            return $group;
+        })
+        ->filter(fn ($group) => $group[1] !== [])
+        ->values()
+        ->all();
 
     /*
      * La opción activa es la de ruta más específica: en /vehiculos/catalogos
@@ -51,6 +82,20 @@
         ->first();
 
     $user = auth()->user();
+
+    /*
+     * Secciones plegadas del menú (cookie nav_closed, ver bootstrap/app.php).
+     * Se pintan ya plegadas desde el servidor para que no parpadeen; la de la
+     * página actual siempre se abre.
+     */
+    $navKey = fn (?string $title) => $title ? \Illuminate\Support\Str::slug($title) : null;
+    $activeGroup = collect($navGroups)
+        ->first(fn ($group) => in_array($activePath, array_column($group[1], 0), true));
+    $navClosed = collect(explode(',', (string) request()->cookie('nav_closed', '')))
+        ->filter()
+        ->reject(fn ($key) => $activeGroup && $key === $navKey($activeGroup[0]))
+        ->values()
+        ->all();
 @endphp
 
 <!doctype html>
@@ -84,15 +129,43 @@
                 </div>
             </div>
 
-            <nav class="flex-1 space-y-5 overflow-y-auto px-3 py-2">
+            <nav class="nav-scroll flex-1 space-y-3 overflow-y-auto px-3 py-2" x-data="{
+                closed: @js($navClosed),
+                isOpen(key) { return !this.closed.includes(key) },
+                toggle(key) {
+                    this.closed = this.isOpen(key) ? [...this.closed, key] : this.closed.filter((k) => k !== key)
+                    document.cookie = 'nav_closed=' + encodeURIComponent(this.closed.join(',')) + '; path=/; max-age=31536000; samesite=lax'
+                },
+            }">
                 @foreach ($navGroups as [$groupTitle, $items])
+                    @php
+                        $key = $navKey($groupTitle);
+                        $startsOpen = ! in_array($key, $navClosed, true);
+                    @endphp
                     <div>
                         @if ($groupTitle)
-                            <p class="mb-1.5 px-3 text-[10px] font-semibold tracking-wider text-brand-300 uppercase">
+                            <button type="button" @click="toggle(@js($key))"
+                                :aria-expanded="isOpen(@js($key)) ? 'true' : 'false'" aria-expanded="{{ $startsOpen ? 'true' : 'false' }}"
+                                aria-controls="nav-{{ $key }}"
+                                class="group flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-1.5 text-[10px] font-semibold tracking-wider text-brand-300 uppercase transition hover:bg-white/5 hover:text-cream-100">
                                 {{ $groupTitle }}
-                            </p>
+                                <x-lucide-chevron-down class="size-3.5 shrink-0 transition-transform duration-200 {{ $startsOpen ? '' : '-rotate-90' }}"
+                                    ::class="{ '-rotate-90': !isOpen({{ \Illuminate\Support\Js::from($key) }}) }" />
+                            </button>
                         @endif
-                        <div class="space-y-0.5">
+                        {{-- Plegado con grid-rows 1fr/0fr: anima la altura sin medirla. --}}
+                        <div @if ($groupTitle) id="nav-{{ $key }}" @endif
+                            @class([
+                                'grid transition-[grid-template-rows] duration-200 ease-out',
+                                'grid-rows-[1fr]' => $startsOpen,
+                                'grid-rows-[0fr]' => ! $startsOpen,
+                            ])
+                            @if ($groupTitle)
+                                {{-- Sintaxis de objeto: así Alpine también quita la clase que pintó el servidor. --}}
+                                :class="{ 'grid-rows-[1fr]': isOpen(@js($key)), 'grid-rows-[0fr]': !isOpen(@js($key)) }"
+                                :inert="!isOpen(@js($key))" @if (! $startsOpen) inert @endif
+                            @endif>
+                        <div class="min-h-0 space-y-0.5 overflow-hidden">
                             @foreach ($items as [$to, $label, $icon])
                                 <a href="{{ url($to) }}" @if ($to === $activePath) aria-current="page" @endif
                                     @class([
@@ -104,6 +177,7 @@
                                     {{ $label }}
                                 </a>
                             @endforeach
+                        </div>
                         </div>
                     </div>
                 @endforeach

@@ -91,6 +91,7 @@ class DailyDashboard
 
         // Una sola consulta de asistencias para todo el día.
         $attendances = Attendance::query()
+            ->with('schedule')
             ->whereDate('date', $date)
             ->whereIn('user_id', $crews->flatten(1)->pluck('user_id')->concat($candidates->pluck('id'))->unique()->values())
             ->get()
@@ -103,15 +104,17 @@ class DailyDashboard
             $route = $routes->get($scheduling->id);
             $scheduled = [$scheduling->driver_id, ...$scheduling->helperIds()];
 
-            // Si marcó en más de un turno, vale la marca de este turno.
+            // La marcación es por turno: solo vale la de este turno. Una entrada
+            // en la tarde no cubre una programación de la mañana.
             $attendance = function (int $userId) use ($attendances, $scheduling): array {
-                $marks = $attendances->get($userId, collect());
-                $mark = $marks->firstWhere('schedule_id', $scheduling->schedule_id) ?? $marks->first();
+                $mark = $attendances->get($userId, collect())->firstWhere('schedule_id', $scheduling->schedule_id);
 
                 return [
                     'present' => $mark?->isPresent() ?? false,
                     'mark' => self::markLabel($mark),
                     'check_in' => $mark?->check_in ? substr($mark->check_in, 0, 5) : null,
+                    'check_out' => $mark?->check_out ? substr($mark->check_out, 0, 5) : null,
+                    'exit' => self::exitLabel($mark?->exitState()),
                 ];
             };
 
@@ -183,16 +186,19 @@ class DailyDashboard
         }
 
         $this->options = [
-            'staff' => $candidates->map(function (User $person) use ($attendances) {
-                $mark = $attendances->get($person->id)?->first(fn (Attendance $attendance) => $attendance->isPresent());
-
-                return [
-                    'id' => $person->id,
-                    'full_name' => $person->full_name,
-                    'role' => $person->usertype?->slug === UserType::DRIVER ? 'conductor' : 'ayudante',
-                    'mark' => $mark ? trim(self::markLabel($mark)[0].' '.substr((string) $mark->check_in, 0, 5)) : null,
-                ];
-            })->values()->all(),
+            // La marcación de cada uno por turno (turno => "Presente 06:04"): al
+            // reemplazar solo sirve quien marcó en el turno de esa programación.
+            'staff' => $candidates->map(fn (User $person) => [
+                'id' => $person->id,
+                'full_name' => $person->full_name,
+                'role' => $person->usertype?->slug === UserType::DRIVER ? 'conductor' : 'ayudante',
+                'marks' => (object) $attendances->get($person->id, collect())
+                    ->filter(fn (Attendance $attendance) => $attendance->isPresent() && $attendance->schedule_id)
+                    ->mapWithKeys(fn (Attendance $mark) => [
+                        $mark->schedule_id => trim(self::markLabel($mark)[0].' '.substr((string) $mark->check_in, 0, 5)),
+                    ])
+                    ->all(),
+            ])->values()->all(),
             'vehicles' => Vehicle::operational()->orderBy('code')->get()
                 ->map(fn (Vehicle $vehicle) => ['id' => $vehicle->id, 'label' => self::vehicleLabel($vehicle)])
                 ->all(),
@@ -342,6 +348,16 @@ class DailyDashboard
             'tarde' => ['Tardanza', 'amber'],
             'falta' => ['Falta', 'red'],
             default => ['Sin marcar', 'slate'],
+        };
+    }
+
+    /** @return array{0: string, 1: string}|null Aviso sobre la salida del turno, si lo hay. */
+    private static function exitLabel(?string $state): ?array
+    {
+        return match ($state) {
+            'anticipada' => ['Salida anticipada', 'amber'],
+            'sin_salida' => ['Sin salida', 'red'],
+            default => null,
         };
     }
 

@@ -34,7 +34,7 @@
 <x-layouts.app title="Catálogos de vehículos"
     subtitle="Colores, marcas, modelos y tipos que alimentan la ficha del vehículo">
     <nav class="mb-5 flex gap-1 border-b border-stone-200" aria-label="Catálogos">
-        @foreach ($tabs as $key => [$label])
+        @foreach (\Illuminate\Support\Arr::only($tabs, $allowedTabs) as $key => [$label])
             <a href="{{ route('vehicle-catalogs.index', ['tab' => $key]) }}"
                 @if ($key === $tab) aria-current="page" @endif @class([
                     '-mb-px flex items-center gap-2 border-b-2 px-4 py-2 text-[13px] font-medium transition',
@@ -62,10 +62,12 @@
     })">
         <x-card>
             <x-card-header :title="$plural" :description="$description">
+                @can($perm.'.create')
                 <button type="button" class="btn btn-primary btn-sm" @click="create()">
                     <x-lucide-plus class="size-3.5" />
                     {{ $titleNew }}
                 </button>
+                @endcan
             </x-card-header>
 
             <x-search-bar :value="$search" :placeholder="$placeholders[$tab]" :keep="['tab' => $tab]" />
@@ -138,7 +140,7 @@
                                 <td><x-datetime :value="$row->created_at" /></td>
                                 <td><x-datetime :value="$row->updated_at" /></td>
                                 <td>
-                                    <x-row-actions :label="$row->name" :row="match ($tab) {
+                                    <x-row-actions :editable="auth()->user()->can($perm.'.edit')" :deletable="auth()->user()->can($perm.'.delete')" :label="$row->name" :row="match ($tab) {
                                         'colores' => $row->only('id', 'name', 'description', 'hex'),
                                         'marcas' => $row->only('id', 'name', 'description', 'logo_url'),
                                         'modelos' => $row->only('id', 'name', 'description', 'code', 'brand_id'),

@@ -35,10 +35,12 @@
         <x-card>
             <x-card-header title="Motivos registrados"
                 description="Se ofrecen en la reprogramación y en el Dashboard según el tipo de cambio; los de «Todos los cambios», en los tres.">
+                @can('reasons.create')
                 <button type="button" class="btn btn-primary btn-sm" @click="create()">
                     <x-lucide-plus class="size-3.5" />
                     Nuevo motivo
                 </button>
+                @endcan
             </x-card-header>
 
             <div class="overflow-x-auto">
@@ -78,7 +80,7 @@
                                 <td class="max-w-72 whitespace-normal"><span class="text-stone-500">{{ $reason->description ?: '—' }}</span></td>
                                 <td class="text-right tabular-nums">{{ $usage->get($reason->name, 0) }}</td>
                                 <td>
-                                    <x-row-actions :label="$reason->name" :row="[
+                                    <x-row-actions :editable="auth()->user()->can('reasons.edit')" :deletable="auth()->user()->can('reasons.delete')" :label="$reason->name" :row="[
                                         'id' => $reason->id,
                                         'name' => $reason->name,
                                         'type' => $reason->type,

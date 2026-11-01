@@ -22,6 +22,7 @@
     $opensBefore = App\Models\Attendance::OPENS_BEFORE;
     $graceAfter = App\Models\Attendance::GRACE_AFTER;
     $closesAfter = App\Models\Attendance::CLOSES_AFTER;
+    $exitClosesAfter = App\Models\Attendance::EXIT_CLOSES_AFTER;
     $today = now()->toImmutable();
 @endphp
 
@@ -37,10 +38,12 @@
     })">
         <x-card>
             <x-card-header title="Turnos definidos">
+                @can('schedules.create')
                 <button type="button" class="btn btn-primary btn-sm" @click="create()">
                     <x-lucide-plus class="size-3.5" />
                     Nuevo turno
                 </button>
+                @endcan
             </x-card-header>
 
             <div class="overflow-x-auto">
@@ -85,7 +88,7 @@
                                 <td><span class="text-stone-500">{{ $schedule->description ?: '—' }}</span></td>
                                 <td class="text-right tabular-nums">{{ $schedule->schedulings_count }}</td>
                                 <td>
-                                    <x-row-actions :label="$schedule->name" :row="[
+                                    <x-row-actions :editable="auth()->user()->can('schedules.edit')" :deletable="auth()->user()->can('schedules.delete')" :label="$schedule->name" :row="[
                                         'id' => $schedule->id,
                                         'name' => $schedule->name,
                                         'time_start' => $hhmm($schedule->time_start),
@@ -106,13 +109,18 @@
                 <div class="space-y-1">
                     <p class="font-medium text-stone-700">¿Cómo se define el horario de marcación?</p>
                     <p>
-                        Se calcula a partir de la <strong>hora de inicio</strong> del turno: la marcación abre
-                        {{ $opensBefore }} min antes, se registra como <strong>presente</strong> hasta {{ $graceAfter }} min
-                        después, como <strong>tarde</strong> pasado ese margen, y cierra {{ $closesAfter / 60 }} horas después del inicio.
+                        Cada turno tiene su <strong>entrada</strong> y su <strong>salida</strong>: quien trabaja mañana y tarde
+                        marca las dos en cada turno.
                     </p>
                     <p>
-                        Para cambiar el horario de marcación, edita la <strong>hora de inicio</strong> del turno
-                        (<x-lucide-pencil class="inline size-3 align-[-1px]" />). La hora de fin no afecta la marcación.
+                        La <strong>entrada</strong> se calcula con la <strong>hora de inicio</strong>: abre {{ $opensBefore }} min antes,
+                        se registra como <strong>presente</strong> hasta {{ $graceAfter }} min después, como <strong>tarde</strong>
+                        pasado ese margen, y cierra {{ $closesAfter / 60 }} horas después del inicio. Quien está programado ese día
+                        solo puede marcar entrada en su turno.
+                    </p>
+                    <p>
+                        La <strong>salida</strong> se marca desde la entrada hasta {{ $exitClosesAfter / 60 }} horas después de la
+                        <strong>hora de fin</strong>; antes del fin queda como <strong>salida anticipada</strong>.
                     </p>
                 </div>
             </div>
@@ -142,7 +150,7 @@
             }" class="flex items-start gap-2 rounded-md border border-stone-200 bg-stone-50 px-3 py-2.5 text-[12px] text-stone-600">
                 <x-lucide-info class="mt-0.5 size-3.5 shrink-0 text-stone-400" />
                 <span>
-                    Con esta hora de inicio, el personal podrá marcar asistencia de
+                    Con esta hora de inicio, el personal podrá marcar su entrada de
                     <strong class="font-mono" x-text="at(-{{ $opensBefore }})"></strong> a
                     <strong class="font-mono" x-text="at({{ $closesAfter }})"></strong>
                     (puntual hasta las <strong class="font-mono" x-text="at({{ $graceAfter }})"></strong>).
