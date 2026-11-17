@@ -33,7 +33,8 @@ class AttendanceService
      */
     public function mark(string $dni, string $password, string $type = 'entrada'): array
     {
-        $person = User::with('zone')->where('dni', $dni)->first();
+        // Solo el personal operativo marca: un ciudadano con el mismo DNI no existe para la terminal.
+        $person = User::with('zone')->staff()->where('dni', $dni)->first();
 
         if (! $person || ! Hash::check($password, $person->password)) {
             throw ValidationException::withMessages(['dni' => 'DNI o clave incorrectos.']);

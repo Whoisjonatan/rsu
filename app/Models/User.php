@@ -280,6 +280,12 @@ class User extends Authenticatable
             ->orWhereHas('usertype', fn (Builder $t) => $t->staffFunctions()));
     }
 
+    /** Ciudadano registrado desde la app (no es personal ni entra al panel). */
+    public function isCitizen(): bool
+    {
+        return $this->usertype?->slug === UserType::CITIZEN;
+    }
+
     /** Si es un usuario del sistema; solo ellos entran al panel. */
     public function isSystemUser(): bool
     {

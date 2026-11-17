@@ -79,10 +79,7 @@ class VehicleRouteController extends Controller
             ], 422);
         }
 
-        $vehicleroute->update([
-            'status' => 'iniciado',
-            'time_route' => now()->format('H:i:s'),
-        ]);
+        $vehicleroute->markStarted();
 
         return response()->json([
             'data' => new VehicleRouteResource($vehicleroute->load(self::RELATIONS)),
@@ -127,7 +124,7 @@ class VehicleRouteController extends Controller
                     continue;
                 }
 
-                $route->update(['status' => 'iniciado', 'time_route' => now()->format('H:i:s')]);
+                $route->markStarted();
                 $iniciados[] = ['id' => $route->id, 'vehicle' => $route->vehicle?->code];
             }
         });
@@ -283,7 +280,7 @@ class VehicleRouteController extends Controller
             ], 409);
         }
 
-        $vehicleroute->update(['status' => 'finalizado']);
+        $vehicleroute->markFinished();
 
         return response()->json(['data' => new VehicleRouteResource($vehicleroute->load(self::RELATIONS))]);
     }

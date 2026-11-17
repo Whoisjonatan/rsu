@@ -1,0 +1,29 @@
+# Lo que NO debe entrar en la imagen
+.git
+.env
+.env.*
+!.env.example
+node_modules
+vendor
+public/build
+public/hot
+public/storage
+tests
+.phpunit.result.cache
+.phpunit.cache
+.idea
+.vscode
+docker-compose.yml
+Dockerfile
+.dockerignore
+# Archivos temporales y de la máquina local
+bootstrap/cache/*.php
+storage/logs/*
+!storage/logs/.gitignore
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/pail
+# Imágenes subidas en local (en Docker viven en un volumen)
+storage/app/public/*
+!storage/app/public/.gitignore

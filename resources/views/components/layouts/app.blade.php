@@ -28,6 +28,7 @@
         ]],
         ['Programación', [
             ['/programacion', 'Programación', 'calendar-days'],
+            ['/recorridos-en-vivo', 'Recorridos en vivo', 'radio'],
             ['/turnos', 'Turnos', 'clock'],
             ['/grupos-personal', 'Grupos de personal', 'users-round'],
             ['/feriados', 'Feriados', 'calendar-x'],

@@ -1,0 +1,98 @@
+# =====================================================================
+#  RSU Reciclaje en Docker
+#    app        -> Laravel + PHP 8.2 + Apache  (imagen personalizada)
+#    db         -> MySQL 8.0                   (imagen oficial)
+#    phpmyadmin -> ver la base de datos        (imagen oficial)
+#
+#  Iniciar:   docker compose up -d
+#  Detener:   docker compose down
+# =====================================================================
+
+name: rsu
+
+services:
+
+  # ---------- Servidor web: Apache + PHP + Laravel ----------
+  app:
+    image: whoisjonatan/rsu-app:1.0
+    container_name: rsu-app
+    restart: unless-stopped
+    ports:
+      - "8080:80"                       # http://localhost:8080
+    environment:
+      APP_NAME: "RSU Reciclaje"
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: base64:7zZZm1DGGtpRYIRwjMmhbW08FCCuCIQixFWKdLdoWDE=
+      APP_URL: http://localhost:8080
+      APP_TIMEZONE: America/Lima
+      APP_LOCALE: es
+      APP_FAKER_LOCALE: es_PE
+      LOG_CHANNEL: stderr               # errores visibles con: docker compose logs app
+      DB_CONNECTION: mysql
+      DB_HOST: db                       # nombre del servicio de MySQL (red interna)
+      DB_PORT: 3306
+      DB_DATABASE: rsu_reciclaje
+      DB_USERNAME: rsu
+      DB_PASSWORD: rsu_secret
+      SESSION_DRIVER: database
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+      FILESYSTEM_DISK: local
+      SANCTUM_STATEFUL_DOMAINS: localhost:8080,127.0.0.1:8080
+    volumes:
+      - rsu-uploads:/var/www/html/storage/app/public   # imágenes subidas
+    depends_on:
+      db:
+        condition: service_healthy      # espera a que MySQL esté listo
+    networks:
+      - rsu-red
+
+  # ---------- Base de datos: MySQL ----------
+  db:
+    image: mysql:8.0
+    container_name: rsu-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: rsu_reciclaje
+      MYSQL_USER: rsu
+      MYSQL_PASSWORD: rsu_secret
+      MYSQL_ROOT_PASSWORD: root_secret
+      TZ: America/Lima
+    ports:
+      - "3307:3306"                     # opcional: HeidiSQL/Workbench en el puerto 3307
+    volumes:
+      - rsu-mysql:/var/lib/mysql        # los datos NO se pierden al borrar el contenedor
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot_secret"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - rsu-red
+
+  # ---------- phpMyAdmin: administrar la BD desde el navegador ----------
+  phpmyadmin:
+    image: phpmyadmin:5
+    container_name: rsu-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8081:80"                       # http://localhost:8081
+    environment:
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: root_secret
+    depends_on:
+      - db
+    networks:
+      - rsu-red
+
+volumes:
+  rsu-mysql:
+    name: rsu-mysql
+  rsu-uploads:
+    name: rsu-uploads
+
+networks:
+  rsu-red:
+    name: rsu-red

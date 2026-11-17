@@ -73,6 +73,8 @@ class Status
             'finalizada' => ['Finalizada', 'blue'],
             // Le cambiaron turno, vehículo o personal; sigue en pie como una activa.
             'reprogramada' => ['Reprogramada', 'amber'],
+            // Su recorrido está en curso (lo inició el conductor desde la app o W21).
+            'iniciada' => ['Iniciada', 'live'],
         ],
     ];
 

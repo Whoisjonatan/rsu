@@ -16,6 +16,7 @@ use App\Http\Controllers\Web\SchedulingChangeController;
 use App\Http\Controllers\Web\SchedulingController;
 use App\Http\Controllers\Web\StaffGroupController;
 use App\Http\Controllers\Web\SystemUserController;
+use App\Http\Controllers\Web\TrackingController;
 use App\Http\Controllers\Web\UserTypeController;
 use App\Http\Controllers\Web\VacationController;
 use App\Http\Controllers\Web\VehicleCatalogController;
@@ -166,6 +167,9 @@ Route::middleware(['auth', 'permission'])->group(function () {
     // La programación general entera (pestaña General de W17): todos sus días a la vez.
     Route::delete('programacion/general/{general}', [SchedulingController::class, 'destroyGeneral'])->whereNumber('general')->name('schedulings.general.destroy');
     Route::patch('programacion/general/{general}/finalizar', [SchedulingController::class, 'finishGeneral'])->whereNumber('general')->name('schedulings.general.finish');
+
+    // Recorridos en vivo: el trayecto GPS que manda la app del conductor, en el mapa.
+    Route::get('recorridos-en-vivo', [TrackingController::class, 'index'])->name('tracking.index');
 
     // Gestión de cambios: el historial de cambios y los motivos que se eligen al reprogramar.
     Route::get('cambios', [SchedulingChangeController::class, 'index'])->name('scheduling-changes.index');

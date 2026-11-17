@@ -52,6 +52,13 @@ class Rescheduling
             'status' => 'reprogramada',
         ];
 
+        // Con el camión en la calle no se cambia turno, vehículo ni personal.
+        if ($scheduling->isStarted()) {
+            $this->errors[] = "La programación {$scheduling->code} tiene el recorrido en curso: no se puede reprogramar hasta que termine.";
+
+            return;
+        }
+
         foreach (array_values($changes) as $index => $change) {
             $this->apply($index + 1, $change);
         }

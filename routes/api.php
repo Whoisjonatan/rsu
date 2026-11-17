@@ -5,14 +5,17 @@ use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\BrandModelController;
+use App\Http\Controllers\Api\CitizenController;
 use App\Http\Controllers\Api\ContractController;
 use App\Http\Controllers\Api\DniLookupController;
 use App\Http\Controllers\Api\GeographyController;
+use App\Http\Controllers\Api\MobileController;
 use App\Http\Controllers\Api\PersonController;
 use App\Http\Controllers\Api\RouteController;
 use App\Http\Controllers\Api\ScheduleController;
 use App\Http\Controllers\Api\SchedulingController;
 use App\Http\Controllers\Api\StaffGroupController;
+use App\Http\Controllers\Api\TrackingController;
 use App\Http\Controllers\Api\UserTypeController;
 use App\Http\Controllers\Api\VacationController;
 use App\Http\Controllers\Api\VehicleColorController;
@@ -43,6 +46,37 @@ Route::name('api.')->group(function () {
     });
 
     Route::post('/login', [AuthController::class, 'login']);
+    // App móvil: conductores y ciudadanos entran con DNI y clave.
+    Route::post('/mobile/login', [AuthController::class, 'mobileLogin'])->middleware('throttle:10,1');
+    // Registro de ciudadanos y zonas para elegir la suya (público).
+    Route::post('/mobile/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
+    Route::get('/mobile/zones', [CitizenController::class, 'zones'])->middleware('throttle:30,1');
+
+    // App del ciudadano: solo lo de su zona.
+    Route::middleware('auth:sanctum')->prefix('citizen')->name('citizen.')->group(function () {
+        Route::get('/schedulings', [CitizenController::class, 'schedulings'])->name('schedulings');
+        Route::get('/schedulings/{scheduling}', [CitizenController::class, 'scheduling'])->name('schedulings.show');
+        Route::get('/routes', [CitizenController::class, 'history'])->name('routes.index');
+        Route::get('/routes/{vehicleroute}', [CitizenController::class, 'route'])->middleware('throttle:90,1')->name('routes.show');
+        Route::post('/routes/{vehicleroute}/rating', [CitizenController::class, 'rate'])->name('routes.rating');
+        Route::get('/profile', [CitizenController::class, 'profile'])->name('profile');
+        Route::put('/profile', [CitizenController::class, 'updateProfile'])->name('profile.update');
+        Route::put('/password', [CitizenController::class, 'updatePassword'])->name('password.update');
+    });
+    // Sin el middleware "permission" del panel: el conductor solo ve lo suyo.
+    Route::middleware('auth:sanctum')->prefix('mobile')->name('mobile.')->group(function () {
+        Route::get('/schedulings', [MobileController::class, 'schedulings'])->name('schedulings');
+        Route::get('/schedulings/{scheduling}', [MobileController::class, 'scheduling'])->name('schedulings.show');
+        // Historial de recorridos del conductor.
+        Route::get('/routes', [MobileController::class, 'history'])->name('routes.index');
+        // Recorrido en curso: inicio, puntos GPS cada 5 s y cierre con observación.
+        Route::get('/routes/{vehicleroute}', [MobileController::class, 'route'])->name('routes.show');
+        Route::post('/routes/{vehicleroute}/start', [MobileController::class, 'startRoute'])->name('routes.start');
+        Route::post('/routes/{vehicleroute}/paths', [MobileController::class, 'storePaths'])
+            ->middleware('throttle:60,1')
+            ->name('routes.paths');
+        Route::post('/routes/{vehicleroute}/finish', [MobileController::class, 'finishRoute'])->name('routes.finish');
+    });
 
     // Terminal de marcacion (W11): publico, el trabajador se identifica con DNI y clave.
     Route::post('/attendances/mark', [AttendanceController::class, 'mark']);
@@ -139,5 +173,9 @@ Route::name('api.')->group(function () {
         Route::post('vehicleroutes/{vehicleroute}/finish', [VehicleRouteController::class, 'finish'])->name('vehicleroutes.finish');
         Route::get('vehicleroutes/{vehicleroute}/reserves', [VehicleRouteController::class, 'reserves'])->name('vehicleroutes.reserves');
         Route::put('vehicleroutes/{vehicleroute}/occupants/{occupant}', [VehicleRouteController::class, 'replaceOccupant'])->name('vehicleroutes.occupants');
+
+        // Recorridos en vivo: la pantalla del panel consulta esto cada 5 segundos.
+        Route::get('tracking', [TrackingController::class, 'index'])->name('tracking.index');
+        Route::get('tracking/{vehicleroute}', [TrackingController::class, 'show'])->name('tracking.show');
     });
 });

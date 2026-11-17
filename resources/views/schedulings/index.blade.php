@@ -58,6 +58,7 @@
         + ['date_from' => $dateFrom ?? '', 'date_to' => $dateTo ?? ''];
 
     $dayCountLabels = [
+        'iniciada' => ['en curso', 'en curso'],
         'reprogramada' => ['reprogramado', 'reprogramados'],
         'finalizada' => ['finalizado', 'finalizados'],
         'inactiva' => ['inactivo', 'inactivos'],
@@ -148,7 +149,7 @@
                 <select name="status" class="field w-auto min-w-40" aria-label="Filtrar por estado">
                     <option value="">Estado: todos</option>
                     {{-- Una general no tiene estado propio: sale de sus días y nunca está "reprogramada". --}}
-                    @foreach (\Illuminate\Support\Arr::except(Status::options('scheduling'), $isGeneral ? ['reprogramada'] : []) as $value => $label)
+                    @foreach (\Illuminate\Support\Arr::except(Status::options('scheduling'), $isGeneral ? ['reprogramada', 'iniciada'] : []) as $value => $label)
                         <option value="{{ $value }}" @selected($filters['status'] === $value)>{{ $label }}</option>
                     @endforeach
                 </select>
@@ -304,8 +305,19 @@
                                     </td>
                                     <td>
                                         <div class="flex justify-end gap-1">
-                                            {{-- Una finalizada es historia: ya no se edita. --}}
-                                            @unless ($row->isFinished())
+                                            {{-- Recorrido en curso o ya hecho: su trayecto GPS en el mapa. --}}
+                                            @if ($row->day_route_id && in_array($row->day_status, ['iniciado', 'finalizado'], true))
+                                                @can('tracking.view')
+                                                <a href="{{ route('tracking.index', ['recorrido' => $row->day_route_id]) }}"
+                                                    class="icon-btn {{ $row->day_status === 'iniciado' ? 'text-brand-600' : '' }}"
+                                                    title="{{ $row->day_status === 'iniciado' ? 'Ver recorrido en tiempo real' : 'Ver trayecto del recorrido' }}"
+                                                    aria-label="Ver recorrido de {{ $row->code }}">
+                                                    <x-lucide-map-pinned class="size-3.5" />
+                                                </a>
+                                                @endcan
+                                            @endif
+                                            {{-- Una finalizada es historia y una iniciada está en la calle: no se editan. --}}
+                                            @unless ($row->isFinished() || $row->isStarted())
                                                 @can('schedulings.edit')
                                                 <a href="{{ route('schedulings.edit', $row) }}" class="icon-btn" title="Modificar este día"
                                                     aria-label="Modificar {{ $row->code }}">

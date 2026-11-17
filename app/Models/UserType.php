@@ -34,6 +34,11 @@ class UserType extends Model
 
     public const KIND_STAFF = 'personal';
 
+    /** Ciudadanos registrados desde la app: ni personal ni usuarios del panel. */
+    public const KIND_CITIZEN = 'ciudadano';
+
+    public const CITIZEN = 'ciudadano';
+
     protected $fillable = ['name', 'slug', 'kind', 'description', 'is_system'];
 
     protected $attributes = ['kind' => self::KIND_STAFF];
@@ -47,7 +52,7 @@ class UserType extends Model
     /** Funciones del personal operativo. */
     public function scopeStaffFunctions(Builder $query): Builder
     {
-        return $query->where('kind', '!=', self::KIND_SYSTEM);
+        return $query->whereNotIn('kind', [self::KIND_SYSTEM, self::KIND_CITIZEN]);
     }
 
     public function isSystemUser(): bool

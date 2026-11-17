@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class VehicleRoute extends Model
 {
@@ -15,11 +17,111 @@ class VehicleRoute extends Model
     protected $fillable = [
         'scheduling_id', 'date_route', 'time_route', 'vehicle_id',
         'route_id', 'schedule_id', 'description', 'status', 'block_reason',
+        'started_at', 'finished_at', 'observation',
     ];
+
+    /**
+     * Distancia mínima (metros) entre dos puntos guardados del recorrido. Con
+     * el camión detenido (un semáforo, una descarga) el GPS sigue reportando
+     * casi el mismo lugar con unos metros de ruido: esos puntos no se guardan.
+     */
+    public const MIN_PATH_DISTANCE = 10;
 
     protected function casts(): array
     {
-        return ['date_route' => 'date:Y-m-d'];
+        return [
+            'date_route' => 'date:Y-m-d',
+            'started_at' => 'datetime',
+            'finished_at' => 'datetime',
+        ];
+    }
+
+    /** Arranca el recorrido y deja su programación "iniciada". */
+    public function markStarted(): void
+    {
+        DB::transaction(function () {
+            $this->update([
+                'status' => 'iniciado',
+                'time_route' => now()->format('H:i:s'),
+                'started_at' => now(),
+            ]);
+            $this->scheduling?->markStarted();
+        });
+    }
+
+    /** Cierra el recorrido y su programación sale de "iniciada". */
+    public function markFinished(?string $observation = null): void
+    {
+        DB::transaction(function () use ($observation) {
+            $this->update(array_filter([
+                'status' => 'finalizado',
+                'finished_at' => now(),
+                'observation' => $observation,
+            ], fn ($value) => $value !== null));
+            $this->scheduling?->markRouteFinished();
+        });
+    }
+
+    /**
+     * Guarda los puntos GPS del recorrido en orden, descartando los que caen a
+     * menos de MIN_PATH_DISTANCE del último guardado (ubicación repetida).
+     * Se bloquea la fila del recorrido para que dos envíos simultáneos no
+     * comparen contra el mismo "último punto" y dupliquen ubicaciones.
+     *
+     * @param  list<array{latitude: float|string, longitude: float|string, recorded_at?: string|null}>  $points
+     * @return array{saved: int, skipped: int}
+     */
+    public function recordPath(array $points): array
+    {
+        return DB::transaction(function () use ($points) {
+            static::query()->whereKey($this->getKey())->lockForUpdate()->first();
+
+            $last = $this->paths()->latest('id')->first();
+            $saved = 0;
+            $skipped = 0;
+            $floor = $this->started_at ?? now()->startOfDay();
+
+            foreach ($points as $point) {
+                $lat = (float) $point['latitude'];
+                $lng = (float) $point['longitude'];
+
+                if ($last && self::distance($last->latitude, $last->longitude, $lat, $lng) < self::MIN_PATH_DISTANCE) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                // La hora la pone el teléfono (puntos encolados sin señal), pero
+                // nunca antes del inicio ni en el futuro.
+                $at = now();
+                if (! empty($point['recorded_at'])) {
+                    $at = Carbon::parse($point['recorded_at']);
+                    $at = $at->lt($floor) ? $floor->copy() : ($at->gt(now()) ? now() : $at);
+                }
+
+                $path = new RoutePath(['latitude' => $lat, 'longitude' => $lng]);
+                $path->vehicleroute_id = $this->id;
+                $path->created_at = $at;
+                $path->updated_at = $at;
+                $path->save();
+
+                $last = $path;
+                $saved++;
+            }
+
+            return ['saved' => $saved, 'skipped' => $skipped];
+        });
+    }
+
+    /** Distancia en metros entre dos coordenadas (fórmula de Haversine). */
+    public static function distance(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earth = 6371000;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+
+        return $earth * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 
     public function scheduling(): BelongsTo
@@ -50,6 +152,12 @@ class VehicleRoute extends Model
     public function paths(): HasMany
     {
         return $this->hasMany(RoutePath::class, 'vehicleroute_id');
+    }
+
+    /** Calificaciones de los ciudadanos de la zona. */
+    public function ratings(): HasMany
+    {
+        return $this->hasMany(RouteRating::class, 'vehicleroute_id');
     }
 
     public function scopeOnDate(Builder $query, string $date): Builder

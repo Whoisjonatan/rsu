@@ -20,7 +20,7 @@ class Scheduling extends Model
     public const RELATIONS = ['general', 'zone', 'route', 'vehicle', 'schedule', 'driver', 'helpers'];
 
     /** Estados de una programación que sigue en pie (ver scopeInForce). */
-    public const IN_FORCE = ['activa', 'reprogramada'];
+    public const IN_FORCE = ['activa', 'reprogramada', 'iniciada'];
 
     /**
      * Filtros del listado de W17. Los comparten el API y la vista Blade.
@@ -145,7 +145,7 @@ class Scheduling extends Model
     }
 
     /**
-     * Las que siguen en pie: activas y reprogramadas. Son las que generan
+     * Las que siguen en pie: activas, reprogramadas e iniciadas. Son las que generan
      * recorridos y ocupan vehículo y personal.
      */
     public function scopeInForce(Builder $query): Builder
@@ -257,11 +257,51 @@ class Scheduling extends Model
         return $this->status === 'finalizada';
     }
 
+    /** Su recorrido está en curso. */
+    public function isStarted(): bool
+    {
+        return $this->status === 'iniciada';
+    }
+
+    /** Arrancó su recorrido (app del conductor o W21): pasa a "iniciada". */
+    public function markStarted(): void
+    {
+        if (in_array($this->status, ['activa', 'reprogramada'], true)) {
+            $this->update(['status' => 'iniciada']);
+        }
+    }
+
+    /**
+     * Terminó el recorrido del día. Una programación de un solo día (o cuyo
+     * último día ya llegó) queda "finalizada"; una antigua que cubre un rango
+     * y aún tiene días por delante vuelve a como estaba antes de iniciar.
+     */
+    public function markRouteFinished(): void
+    {
+        if (! $this->isStarted()) {
+            return;
+        }
+
+        $pending = $this->vehicleRoutes()->whereIn('status', ['programado', 'iniciado'])->exists();
+
+        if ($this->end_date->toDateString() <= now()->toDateString() || ! $pending) {
+            $this->update(['status' => 'finalizada']);
+
+            return;
+        }
+
+        $this->update(['status' => $this->history()->exists() ? 'reprogramada' : 'activa']);
+    }
+
     /** Por qué no se puede finalizar a mano, o null si se puede. */
     public function finishBlocker(): ?string
     {
         if ($this->isFinished()) {
             return "La programación {$this->code} ya está finalizada.";
+        }
+
+        if ($this->isStarted()) {
+            return "La programación {$this->code} tiene el recorrido en curso: ciérralo desde la app del conductor o desde el calendario.";
         }
 
         if ($this->start_date->toDateString() > now()->toDateString()) {

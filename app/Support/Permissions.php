@@ -67,6 +67,7 @@ final class Permissions
                     'finish' => 'Finalizar',
                     'delete' => 'Eliminar',
                 ]],
+                'tracking' => ['Recorridos en vivo', ['view' => 'Ver']],
                 'schedules' => ['Turnos', self::CRUD],
                 'staffgroups' => ['Grupos de personal', ['schedule' => 'Programar con este grupo', ...self::CRUD]],
                 'holidays' => ['Feriados', [
@@ -245,6 +246,9 @@ final class Permissions
             ...$crud('schedulings.finish', ['schedulings.finish', 'schedulings.general.finish', 'api.schedulings.finish']),
             ...$crud('schedulings.delete', ['schedulings.destroy', 'schedulings.general.destroy', 'api.schedulings.destroy']),
 
+            // Recorridos en vivo (mapa con el GPS de la app del conductor).
+            ...$crud('tracking.view', ['tracking.index', 'api.tracking.index', 'api.tracking.show']),
+
             // Gestión de cambios.
             'scheduling-changes.index' => 'changes.view',
             ...$crud('changes.bulk', ['scheduling-changes.bulk.preview', 'scheduling-changes.bulk.store']),
@@ -283,6 +287,7 @@ final class Permissions
             '/personal/funciones' => ['usertypes.view'],
             '/zonas' => ['zones.view', 'zones.map'],
             '/programacion' => ['schedulings.view'],
+            '/recorridos-en-vivo' => ['tracking.view'],
             '/turnos' => ['schedules.view'],
             '/grupos-personal' => ['staffgroups.view'],
             '/feriados' => ['holidays.view'],
